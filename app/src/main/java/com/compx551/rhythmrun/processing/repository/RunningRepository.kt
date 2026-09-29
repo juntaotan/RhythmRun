@@ -5,7 +5,7 @@ import com.compx551.rhythmrun.processing.processor.HistoricalRunAverage
 import com.compx551.rhythmrun.processing.processor.SpeedHeartRateRatio
 
 /** App-facing persistence API for the two current Room tables. */
-class RunningRepository(private val database: RhythmRunDatabase) {
+class RunningRepository(private val database: RhythmRunDatabase) : RunningStore {
     suspend fun saveSession(session: RunningDetailsEntity) {
         database.runningSessionDao().upsert(session)
     }
@@ -13,6 +13,15 @@ class RunningRepository(private val database: RhythmRunDatabase) {
     suspend fun saveRatios(sessionId: String, ratios: List<SpeedHeartRateRatio>) {
         val entities = ratios.toEntities(sessionId)
         if (entities.isNotEmpty()) database.runningScoreDao().upsertAll(entities)
+    }
+
+    /** Upsert the session and this batch's scores atomically, preserving earlier score batches. */
+    override suspend fun persistBatch(session: RunningDetailsEntity, ratios: List<SpeedHeartRateRatio>) {
+        val entities = ratios.toEntities(session.sessionId)
+        database.withWriteTransaction {
+            database.runningSessionDao().upsert(session)
+            if (entities.isNotEmpty()) database.runningScoreDao().upsertAll(entities)
+        }
     }
 
     /** Replace a completed session and its full ratio timeline in one transaction. */
@@ -43,7 +52,7 @@ class RunningRepository(private val database: RhythmRunDatabase) {
         return database.runningSessionDao().getRecentBefore(beforeStartTime, limit)
     }
 
-    suspend fun getHistoricalAverages(beforeStartTime: Long): List<HistoricalRunAverage> =
+    override suspend fun getHistoricalAverages(beforeStartTime: Long): List<HistoricalRunAverage> =
         getPreviousSessions(beforeStartTime, limit = 10).map { session ->
             HistoricalRunAverage(session.averageVelocity, session.averageHeartRate)
         }

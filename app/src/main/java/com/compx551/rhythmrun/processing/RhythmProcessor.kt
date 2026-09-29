@@ -1,25 +1,28 @@
 package com.compx551.rhythmrun.processing
 
 import com.compx551.rhythmrun.processing.processor.AnalyzingHandler
+import com.compx551.rhythmrun.processing.processor.PersistenceHandler
 import com.compx551.rhythmrun.processing.processor.ProcessingRequest
 import com.compx551.rhythmrun.processing.processor.SpeedHeartRateRatio
-import com.compx551.rhythmrun.processing.repository.RunningRepository
+import com.compx551.rhythmrun.processing.repository.RunningStore
 
-/** Connects historical Room records to efficiency analysis and persists the resulting timeline. */
+/** Connects historical records to efficiency analysis, followed by persistence in the chain. */
 class RhythmProcessor(
-    private val repository: RunningRepository,
+    private val store: RunningStore,
     private val analyzingHandler: AnalyzingHandler = AnalyzingHandler(),
 ) {
+    init {
+        analyzingHandler.setNext(PersistenceHandler(store))
+    }
+
     /** Expects normalization and smoothing to have populated [ProcessingRequest.smoothedReadings]. */
     suspend fun calculateAndStoreEfficiency(request: ProcessingRequest): List<SpeedHeartRateRatio> {
-        val session = requireNotNull(repository.getSession(request.sessionId)) {
-            "Session ${request.sessionId} must be saved before efficiency analysis"
-        }
+        val session = requireNotNull(request.sessionDetails) { "Session details are required for persistence" }
+        require(session.sessionId == request.sessionId) { "Session IDs must match" }
         request.efficiencyBaseline = analyzingHandler.calculateBaseline(
-            repository.getHistoricalAverages(session.startTime),
+            store.getHistoricalAverages(session.startTime),
         )
         analyzingHandler.handle(request)
-        repository.saveRatios(request.sessionId, request.speedHeartRateRatios)
         return request.speedHeartRateRatios
     }
 }

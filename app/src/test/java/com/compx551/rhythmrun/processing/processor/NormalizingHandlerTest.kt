@@ -1,5 +1,6 @@
 package com.compx551.rhythmrun.processing.processor
 
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -43,7 +44,7 @@ class NormalizingHandlerTest {
             ),
         )
 
-        handler.handle(request)
+        runBlocking { handler.handle(request) }
 
         assertEquals(2, request.normalizedReadings.size)
         assertEquals(156.0, (request.normalizedReadings[0] as NormalizedReading.Cadence).stepsPerMinute, 1e-9)
@@ -86,7 +87,9 @@ class NormalizingHandlerTest {
             }
         })
 
-        handler.handle(ProcessingRequest("run-1", listOf(RawReading.HeartRate(1_000, 145.0))))
+        runBlocking {
+            handler.handle(ProcessingRequest("run-1", listOf(RawReading.HeartRate(1_000, 145.0))))
+        }
 
         assertEquals(145.0, downstreamValue!!, 0.0)
     }

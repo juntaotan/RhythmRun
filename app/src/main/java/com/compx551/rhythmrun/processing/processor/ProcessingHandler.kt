@@ -24,12 +24,15 @@ abstract class ProcessingHandler {
         return handler
     }
 
-    fun handle(request: ProcessingRequest) {
-        if (process(request)) {
+    suspend fun handle(request: ProcessingRequest) {
+        if (processSuspending(request)) {
             next?.handle(request)
         }
     }
 
     /** Return true to continue the chain; false to stop it. */
-    protected abstract fun process(request: ProcessingRequest): Boolean
+    protected open fun process(request: ProcessingRequest): Boolean = true
+
+    /** Persistence can perform a suspending write without changing existing handlers. */
+    protected open suspend fun processSuspending(request: ProcessingRequest): Boolean = process(request)
 }

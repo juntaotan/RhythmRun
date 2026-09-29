@@ -1,9 +1,13 @@
 package com.compx551.rhythmrun.processing.processor
 
+import com.compx551.rhythmrun.processing.repository.RunningDetailsEntity
+
 /** Timestamps are milliseconds on the same session timeline. */
 data class ProcessingRequest(
     val sessionId: String,
     val readings: List<RawReading>,
+    /** Session metadata/summary supplied by the session owner for persistence. */
+    val sessionDetails: RunningDetailsEntity? = null,
     /** Last persisted step count before this batch, when processing a continuing session. */
     val previousStepCounter: RawReading.StepCounter? = null,
     var normalizedReadings: List<NormalizedReading> = emptyList(),
@@ -18,6 +22,8 @@ data class ProcessingRequest(
     /** Derived from completed sessions before this session; null when none exist. */
     var efficiencyBaseline: EfficiencyBaseline? = null,
     var speedHeartRateRatios: List<SpeedHeartRateRatio> = emptyList(),
+    /** Produced by AnalyzingHandler and consumed by PersistenceHandler. */
+    var analysisResult: AnalysisResult? = null,
 )
 
 data class EfficiencyBaseline(

@@ -28,6 +28,7 @@ class AnalyzingHandler(private val maxHeartRateAgeMillis: Long = 10_000L) : Proc
             request.previousSmoothedHeartRate,
             request.efficiencyBaseline,
         )
+        request.analysisResult = result
         request.speedHeartRateRatios = result.ratios
         request.latestSmoothedHeartRate = result.latestHeartRate
         return true

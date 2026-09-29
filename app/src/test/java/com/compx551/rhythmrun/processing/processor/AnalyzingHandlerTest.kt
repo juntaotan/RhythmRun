@@ -1,5 +1,6 @@
 package com.compx551.rhythmrun.processing.processor
 
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -97,7 +98,7 @@ class AnalyzingHandlerTest {
                 NormalizedReading.Velocity(3_000, 2.0),
             ),
         )
-        handler.handle(first)
+        runBlocking { handler.handle(first) }
 
         assertEquals(2, first.speedHeartRateRatios.size)
         assertEquals(0.0, first.speedHeartRateRatios[0].speedToHeartRateRatio, 0.0)
@@ -109,7 +110,7 @@ class AnalyzingHandlerTest {
             smoothedReadings = listOf(NormalizedReading.Velocity(4_000, 3.0)),
             previousSmoothedHeartRate = first.latestSmoothedHeartRate,
         )
-        handler.handle(second)
+        runBlocking { handler.handle(second) }
 
         assertEquals(0.03, second.speedHeartRateRatios.single().speedToHeartRateRatio, 1e-9)
     }
@@ -148,7 +149,7 @@ class AnalyzingHandlerTest {
             ),
         )
 
-        handler.handle(request)
+        runBlocking { handler.handle(request) }
 
         assertEquals(request.speedHeartRateRatios, forwarded)
     }
