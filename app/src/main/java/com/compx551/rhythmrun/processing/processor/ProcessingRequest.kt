@@ -15,15 +15,27 @@ data class ProcessingRequest(
     /** Last smoothed HR from the preceding batch, for pairing with the next speed reading. */
     val previousSmoothedHeartRate: NormalizedReading.HeartRate? = null,
     var latestSmoothedHeartRate: NormalizedReading.HeartRate? = null,
+    /** Derived from completed sessions before this session; null when none exist. */
+    var efficiencyBaseline: EfficiencyBaseline? = null,
     var speedHeartRateRatios: List<SpeedHeartRateRatio> = emptyList(),
 )
 
-/** Numerator for the future relative-efficiency index; no historical baseline is applied here. */
+data class EfficiencyBaseline(
+    val averageSpeedMetersPerSecond: Double,
+    val averageHeartRateBpm: Double,
+    val historyCount: Int,
+) {
+    val speedHeartRateRatio: Double
+        get() = averageSpeedMetersPerSecond / averageHeartRateBpm
+}
+
+/** Current ratio and its index relative to historical runs, when a baseline exists. */
 data class SpeedHeartRateRatio(
     val timestampMillis: Long,
     val speedToHeartRateRatio: Double,
     val speedMetersPerSecond: Double,
     val heartRateBpm: Double,
+    val relativeEfficiency: Double? = null,
 )
 
 sealed interface RawReading {

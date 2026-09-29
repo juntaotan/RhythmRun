@@ -10,8 +10,8 @@ package com.compx551.rhythmrun.processing.processor
  * - 1st. validate the data received from the watch in {@code ValidationHandler}
  * - 2nd. normalise the validated data in {@code NormalizingHandler}.
  * - 3rd. Smooth the normalised data using a moving average in {@code SmoothingHandler}.
- * - 4th. Calculate Speed_t / HR_t. Once historical data is available, divide by a baseline
- *        formed from average speed and average HR over the preceding 10 observations.
+ * - 4th. Calculate (Speed_t / HR_t) / (average historical speed / average historical HR), using
+ *        up to the ten most recent completed runs. Leave the index absent with no history.
  * - 5th. Persist the processed data to storage.
  *
  */

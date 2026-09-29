@@ -12,6 +12,6 @@ data class RunningScoreEntity(
     val sessionId: String,
     val timestamp: Long,
     val speedHeartRateRatio: Double,
-    /** Available after the historical ten-record baseline is defined and calculated. */
+    /** Null when no usable prior completed run exists. */
     val relativeEfficiency: Double? = null,
 )

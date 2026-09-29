@@ -1,15 +1,32 @@
 package com.compx551.rhythmrun.processing.processor
 
-/** Computes the current speed-to-heart-rate ratio from smoothed readings. */
+/** Computes the current ratio and, when available, its historical relative-efficiency index. */
 class AnalyzingHandler(private val maxHeartRateAgeMillis: Long = 10_000L) : ProcessingHandler() {
     init {
         require(maxHeartRateAgeMillis >= 0) { "Maximum HR age cannot be negative" }
+    }
+
+    /** History is newest first. Use up to ten prior runs; return null when none are usable. */
+    fun calculateBaseline(historyNewestFirst: List<HistoricalRunAverage>): EfficiencyBaseline? {
+        val recent = historyNewestFirst.asSequence()
+            .take(10)
+            .filter { it.averageSpeedMetersPerSecond.isFinite() &&
+                it.averageSpeedMetersPerSecond > 0.0 &&
+                it.averageHeartRateBpm.isFinite() && it.averageHeartRateBpm > 0.0 }
+            .toList()
+        if (recent.isEmpty()) return null
+
+        val averageSpeed = recent.map { it.averageSpeedMetersPerSecond }.average()
+        val averageHeartRate = recent.map { it.averageHeartRateBpm }.average()
+        if (!averageSpeed.isFinite() || !averageHeartRate.isFinite()) return null
+        return EfficiencyBaseline(averageSpeed, averageHeartRate, recent.size)
     }
 
     override fun process(request: ProcessingRequest): Boolean {
         val result = analyze(
             request.smoothedReadings,
             request.previousSmoothedHeartRate,
+            request.efficiencyBaseline,
         )
         request.speedHeartRateRatios = result.ratios
         request.latestSmoothedHeartRate = result.latestHeartRate
@@ -19,7 +36,14 @@ class AnalyzingHandler(private val maxHeartRateAgeMillis: Long = 10_000L) : Proc
     fun analyze(
         readings: List<NormalizedReading>,
         previousHeartRate: NormalizedReading.HeartRate? = null,
+        baseline: EfficiencyBaseline? = null,
     ): AnalysisResult {
+        require(baseline == null ||
+            (baseline.historyCount in 1..10 &&
+                baseline.averageSpeedMetersPerSecond.isFinite() && baseline.averageSpeedMetersPerSecond > 0.0 &&
+                baseline.averageHeartRateBpm.isFinite() && baseline.averageHeartRateBpm > 0.0)
+        ) { "Baseline must contain 1 to 10 positive, finite historical averages" }
+
         var latestHeartRate = previousHeartRate
         val ratios = mutableListOf<SpeedHeartRateRatio>()
 
@@ -43,15 +67,20 @@ class AnalyzingHandler(private val maxHeartRateAgeMillis: Long = 10_000L) : Proc
 
                     val ratio = speed / bpm
                     if (ratio.isFinite()) {
-                        ratios += SpeedHeartRateRatio(reading.timestampMillis, ratio, speed, bpm)
+                        val index = baseline?.let { ratio / it.speedHeartRateRatio }
+                        ratios += SpeedHeartRateRatio(
+                            timestampMillis = reading.timestampMillis,
+                            speedToHeartRateRatio = ratio,
+                            speedMetersPerSecond = speed,
+                            heartRateBpm = bpm,
+                            relativeEfficiency = index?.takeIf(Double::isFinite),
+                        )
                     }
                 }
                 is NormalizedReading.Acceleration, is NormalizedReading.Cadence -> Unit
             }
         }
 
-        // TODO: Once Room can supply the preceding 10 observations, calculate average speed
-        // and average HR, then divide the current ratio by (average speed / average HR).
         return AnalysisResult(ratios, latestHeartRate)
     }
 }
@@ -59,4 +88,9 @@ class AnalyzingHandler(private val maxHeartRateAgeMillis: Long = 10_000L) : Proc
 data class AnalysisResult(
     val ratios: List<SpeedHeartRateRatio>,
     val latestHeartRate: NormalizedReading.HeartRate?,
+)
+
+data class HistoricalRunAverage(
+    val averageSpeedMetersPerSecond: Double,
+    val averageHeartRateBpm: Double,
 )

@@ -1,6 +1,7 @@
 package com.compx551.rhythmrun.processing.repository
 
 import androidx.room3.withWriteTransaction
+import com.compx551.rhythmrun.processing.processor.HistoricalRunAverage
 import com.compx551.rhythmrun.processing.processor.SpeedHeartRateRatio
 
 /** App-facing persistence API for the two current Room tables. */
@@ -36,11 +37,16 @@ class RunningRepository(private val database: RhythmRunDatabase) {
     suspend fun getRatios(sessionId: String): List<RunningScoreEntity> =
         database.runningScoreDao().getBySession(sessionId)
 
-    /** Supports the later baseline based on the preceding ten completed runs. */
+    /** The preceding completed runs, newest first, excluding the current session. */
     suspend fun getPreviousSessions(beforeStartTime: Long, limit: Int = 10): List<RunningDetailsEntity> {
         require(limit > 0)
         return database.runningSessionDao().getRecentBefore(beforeStartTime, limit)
     }
+
+    suspend fun getHistoricalAverages(beforeStartTime: Long): List<HistoricalRunAverage> =
+        getPreviousSessions(beforeStartTime, limit = 10).map { session ->
+            HistoricalRunAverage(session.averageVelocity, session.averageHeartRate)
+        }
 
     suspend fun deleteSession(sessionId: String) {
         database.withWriteTransaction {
@@ -56,6 +62,7 @@ class RunningRepository(private val database: RhythmRunDatabase) {
                 sessionId = sessionId,
                 timestamp = ratio.timestampMillis,
                 speedHeartRateRatio = ratio.speedToHeartRateRatio,
+                relativeEfficiency = ratio.relativeEfficiency,
             )
         }
 }
