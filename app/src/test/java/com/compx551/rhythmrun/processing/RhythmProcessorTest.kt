@@ -56,6 +56,21 @@ class RhythmProcessorTest {
     }
 
     @Test
+    fun invalidWatchReadingDoesNotReachPersistence() {
+        val store = FakeRunningStore(emptyList())
+        val request = ProcessingRequest(
+            sessionId = "run-1",
+            sessionDetails = session("run-1"),
+            readings = listOf(RawReading.HeartRate(1_000, 300.0)),
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            runBlocking { RhythmProcessor(store).calculateAndStoreEfficiency(request) }
+        }
+        assertEquals(0, store.persistCalls)
+    }
+
+    @Test
     fun noHistoryStillSavesSessionWithNullEfficiencyIndex() = runBlocking {
         val store = FakeRunningStore(emptyList())
         val request = ProcessingRequest(

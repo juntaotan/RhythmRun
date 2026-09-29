@@ -36,6 +36,6 @@ abstract class ProcessingHandler {
     /** Return true to continue the chain; false to stop it. */
     protected open fun process(request: ProcessingRequest): Boolean = true
 
-    /** Persistence can perform a suspending write without changing existing handlers. */
+    /** Persistence can perform a suspending write. */
     protected open suspend fun processSuspending(request: ProcessingRequest): Boolean = process(request)
 }

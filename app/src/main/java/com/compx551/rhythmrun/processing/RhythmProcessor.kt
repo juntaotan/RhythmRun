@@ -5,6 +5,7 @@ import com.compx551.rhythmrun.processing.processor.GpsProcessingHandler
 import com.compx551.rhythmrun.processing.processor.PersistenceHandler
 import com.compx551.rhythmrun.processing.processor.ProcessingRequest
 import com.compx551.rhythmrun.processing.processor.SpeedHeartRateRatio
+import com.compx551.rhythmrun.processing.processor.ValidationHandler
 import com.compx551.rhythmrun.processing.repository.RunningStore
 
 /** Connects GPS processing and historical efficiency analysis to persistence in the chain. */
@@ -13,8 +14,11 @@ class RhythmProcessor(
     private val analyzingHandler: AnalyzingHandler = AnalyzingHandler(),
     private val gpsProcessingHandler: GpsProcessingHandler = GpsProcessingHandler(),
 ) {
+    private val validationHandler = ValidationHandler()
+
     init {
-        gpsProcessingHandler
+        validationHandler
+            .setNext(gpsProcessingHandler)
             .setNext(analyzingHandler)
             .setNext(PersistenceHandler(store))
     }
@@ -29,7 +33,7 @@ class RhythmProcessor(
         request.efficiencyBaseline = analyzingHandler.calculateBaseline(
             store.getHistoricalAverages(session.startTime),
         )
-        gpsProcessingHandler.handle(request)
+        validationHandler.handle(request)
         return request.speedHeartRateRatios
     }
 }
