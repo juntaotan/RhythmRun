@@ -31,11 +31,13 @@ import com.compx551.watchos.permissions.HeartRatePermission
 import com.compx551.watchos.sensors.CapturePhase
 import com.compx551.watchos.sensors.SensorCaptureManager
 import com.compx551.watchos.sensors.SensorCaptureState
+import com.compx551.watchos.storage.TemporarySessionStorage
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     private var captureState by mutableStateOf(SensorCaptureState())
     private var permissionMessage by mutableStateOf<String?>(null)
+    private var showExerciseHistory by mutableStateOf(false)
     private lateinit var sensorCaptureManager: SensorCaptureManager
 
     private val heartRatePermissionLauncher =
@@ -50,13 +52,17 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        sensorCaptureManager = SensorCaptureManager(this) { captureState = it }
+        val temporaryStorage = TemporarySessionStorage(this)
+        sensorCaptureManager = SensorCaptureManager(this, temporaryStorage) { captureState = it }
         setContent {
             WearApp(
                 state = captureState,
                 permissionMessage = permissionMessage,
                 onStart = ::requestPermissionsAndStart,
                 onStop = sensorCaptureManager::stopCapture,
+                showExerciseHistory = showExerciseHistory,
+                onViewExerciseHistory = { showExerciseHistory = true },
+                onCloseExerciseHistory = { showExerciseHistory = false },
             )
         }
     }
@@ -129,9 +135,19 @@ fun WearApp(
     permissionMessage: String?,
     onStart: () -> Unit,
     onStop: () -> Unit,
+    showExerciseHistory: Boolean,
+    onViewExerciseHistory: () -> Unit,
+    onCloseExerciseHistory: () -> Unit,
 ) {
     RhythmRunTheme {
         AppScaffold {
+            if (showExerciseHistory) {
+                ExerciseHistoryScreen(
+                    sessions = demoExerciseHistory,
+                    onBack = onCloseExerciseHistory,
+                )
+                return@AppScaffold
+            }
             val listState = rememberTransformingLazyColumnState()
             val transformationSpec = rememberTransformationSpec()
             ScreenScaffold(scrollState = listState) { contentPadding ->
@@ -226,6 +242,79 @@ fun WearApp(
                             Text(if (state.phase == CapturePhase.IDLE) "Start capture" else "Stop capture")
                         }
                     }
+                    item {
+                        Button(
+                            onClick = onViewExerciseHistory,
+                            modifier =
+                                Modifier.fillMaxWidth().transformedHeight(this, transformationSpec),
+                            transformation = SurfaceTransformation(transformationSpec),
+                        ) {
+                            Text("Exercise history")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private data class ExerciseHistoryItem(
+    val dateLabel: String,
+    val durationMinutes: Int,
+    val distanceKilometres: Double,
+    val steps: Int,
+    val averageCadence: Int,
+    val averageHeartRate: Int,
+    val maximumHeartRate: Int,
+)
+
+private val demoExerciseHistory =
+    listOf(
+        ExerciseHistoryItem("Today · 18:20", 32, 5.4, 6_420, 158, 146, 178),
+        ExerciseHistoryItem("28 Sep · 07:35", 25, 4.1, 5_080, 154, 139, 169),
+        ExerciseHistoryItem("26 Sep · 17:50", 41, 7.0, 8_230, 160, 151, 184),
+        ExerciseHistoryItem("24 Sep · 06:55", 29, 4.8, 5_910, 156, 143, 174),
+        ExerciseHistoryItem("21 Sep · 09:10", 53, 9.2, 10_740, 162, 154, 188),
+    )
+
+@Composable
+private fun ExerciseHistoryScreen(
+    sessions: List<ExerciseHistoryItem>,
+    onBack: () -> Unit,
+) {
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
+    ScreenScaffold(scrollState = listState) { contentPadding ->
+        TransformingLazyColumn(contentPadding = contentPadding, state = listState) {
+            item {
+                ListHeader(
+                    modifier = Modifier.fillMaxWidth().transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                ) {
+                    Text("Exercise history")
+                }
+            }
+            item { SensorLine("Preview", "Latest five exercises", transformationSpec) }
+            item {
+                Button(
+                    onClick = onBack,
+                    modifier = Modifier.fillMaxWidth().transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                ) {
+                    Text("Back")
+                }
+            }
+            sessions.forEach { session ->
+                item {
+                    SensorLine(
+                        label = session.dateLabel,
+                        value =
+                            "${session.durationMinutes} min · ${session.distanceKilometres} km\n" +
+                                "${String.format(Locale.US, "%,d", session.steps)} steps · " +
+                                "${session.averageCadence} spm\n" +
+                                "HR ${session.averageHeartRate} avg · ${session.maximumHeartRate} max",
+                        transformationSpec = transformationSpec,
+                    )
                 }
             }
         }
@@ -253,5 +342,8 @@ fun DefaultPreview() {
         permissionMessage = null,
         onStart = {},
         onStop = {},
+        showExerciseHistory = false,
+        onViewExerciseHistory = {},
+        onCloseExerciseHistory = {},
     )
 }

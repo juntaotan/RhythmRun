@@ -23,6 +23,7 @@ import androidx.health.services.client.data.ExerciseLapSummary
 import androidx.health.services.client.data.ExerciseType
 import androidx.health.services.client.data.ExerciseUpdate
 import androidx.health.services.client.data.LocationAccuracy
+import com.compx551.watchos.storage.TemporarySessionStorage
 
 /** Latest values from the four capture sources retained by RhythmRun. */
 data class SensorCaptureState(
@@ -70,6 +71,7 @@ data class LocationReading(
  */
 class SensorCaptureManager(
     context: Context,
+    private val temporaryStorage: TemporarySessionStorage,
     private val onStateChanged: (SensorCaptureState) -> Unit,
 ) : SensorEventListener {
     private val applicationContext = context.applicationContext
@@ -99,6 +101,8 @@ class SensorCaptureManager(
     private var activityPermissionGranted = false
     private var fineLocationPermissionGranted = false
     private var emulatorHeartRateReceived = false
+    private var currentSessionId: String? = null
+    private var storageSequence = 0L
 
     private val measureHandoff = Runnable { finishMeasureAndStartExercise() }
 
@@ -132,6 +136,9 @@ class SensorCaptureManager(
 
             override fun onDataReceived(data: DataPointContainer) {
                 val reading = data.getData(DataType.HEART_RATE_BPM).lastOrNull() ?: return
+                if (!emulatorHeartRateReceived) {
+                    saveHeartRate(reading.value, HeartRateSource.MEASURE_CLIENT)
+                }
                 updateState {
                     it.copy(
                         heartRateBpm =
@@ -191,6 +198,31 @@ class SensorCaptureManager(
                         )
                     }
 
+                if (heartRate != null && !emulatorHeartRateReceived) {
+                    saveHeartRate(heartRate, HeartRateSource.EXERCISE_CLIENT)
+                }
+                val steps = cumulativeSteps ?: intervalStepTotal
+                if (cumulativeSteps != null || intervalSteps > 0L || cadence != null) {
+                    currentSessionId?.let { sessionId ->
+                        temporaryStorage.saveSteps(
+                            sessionId = sessionId,
+                            sequence = nextStorageSequence(),
+                            timestampNanosSinceBoot = SystemClock.elapsedRealtimeNanos(),
+                            cumulativeSteps = steps,
+                            cadenceStepsPerMinute = cadence,
+                        )
+                    }
+                }
+                if (location != null) {
+                    currentSessionId?.let { sessionId ->
+                        temporaryStorage.saveLocation(
+                            sessionId = sessionId,
+                            sequence = nextStorageSequence(),
+                            reading = location,
+                        )
+                    }
+                }
+
                 updateState { current ->
                     val acceptHealthServicesHeartRate =
                         heartRate != null && !emulatorHeartRateReceived
@@ -201,7 +233,7 @@ class SensorCaptureManager(
                         heartRateSource =
                             if (acceptHealthServicesHeartRate) HeartRateSource.EXERCISE_CLIENT
                             else current.heartRateSource,
-                        exerciseSteps = cumulativeSteps ?: intervalStepTotal,
+                        exerciseSteps = steps,
                         exerciseCadenceSpm = cadence ?: current.exerciseCadenceSpm,
                         location = location ?: current.location,
                         status = "Exercise ${update.exerciseStateInfo.state}",
@@ -233,6 +265,8 @@ class SensorCaptureManager(
         this.activityPermissionGranted = activityPermissionGranted
         this.fineLocationPermissionGranted = fineLocationPermissionGranted
         captureRequested = true
+        storageSequence = 0L
+        currentSessionId = temporaryStorage.beginSession()
         intervalStepTotal = 0L
         firstMeasureHeartRateAtMillis = null
         emulatorHeartRateReceived = false
@@ -311,19 +345,22 @@ class SensorCaptureManager(
                 {
                     exerciseStarted = false
                     clearExerciseCallback()
+                    val error = futureError(endFuture)
                     updateState {
                         it.copy(
                             phase = CapturePhase.IDLE,
                             status = "Capture stopped",
-                            error = futureError(endFuture),
+                            error = error,
                         )
                     }
+                    if (error == null) finishTemporarySession() else interruptTemporarySession()
                 },
                 mainExecutor,
             )
         } else {
             clearExerciseCallback()
             updateState { it.copy(phase = CapturePhase.IDLE, status = "Capture stopped") }
+            finishTemporarySession()
         }
     }
 
@@ -344,6 +381,13 @@ class SensorCaptureManager(
                         yMetersPerSecondSquared = event.values[1],
                         zMetersPerSecondSquared = event.values[2],
                     )
+                currentSessionId?.let { sessionId ->
+                    temporaryStorage.saveAccelerometer(
+                        sessionId = sessionId,
+                        sequence = nextStorageSequence(),
+                        reading = reading,
+                    )
+                }
                 updateState { it.copy(acceleration = reading) }
             }
 
@@ -357,6 +401,7 @@ class SensorCaptureManager(
                 val bpm = event.values.firstOrNull()?.toDouble() ?: return
                 if (!bpm.isFinite() || bpm <= 0.0) return
                 emulatorHeartRateReceived = true
+                saveHeartRate(bpm, HeartRateSource.SENSOR_MANAGER)
                 updateState {
                     it.copy(
                         heartRateBpm = bpm,
@@ -507,6 +552,7 @@ class SensorCaptureManager(
         sensorManager.unregisterListener(this)
         unregisterMeasureCallback()
         clearExerciseCallback()
+        interruptTemporarySession()
         updateState {
             it.copy(
                 phase = CapturePhase.IDLE,
@@ -520,6 +566,32 @@ class SensorCaptureManager(
         state = transform(state)
         onStateChanged(state)
     }
+
+    private fun saveHeartRate(beatsPerMinute: Double, source: HeartRateSource) {
+        currentSessionId?.let { sessionId ->
+            temporaryStorage.saveHeartRate(
+                sessionId = sessionId,
+                sequence = nextStorageSequence(),
+                timestampNanosSinceBoot = SystemClock.elapsedRealtimeNanos(),
+                beatsPerMinute = beatsPerMinute,
+                source = source,
+            )
+        }
+    }
+
+    private fun finishTemporarySession() {
+        val sessionId = currentSessionId ?: return
+        currentSessionId = null
+        temporaryStorage.finishSession(sessionId)
+    }
+
+    private fun interruptTemporarySession() {
+        val sessionId = currentSessionId ?: return
+        currentSessionId = null
+        temporaryStorage.interruptSession(sessionId)
+    }
+
+    private fun nextStorageSequence(): Long = storageSequence++
 
     private fun futureError(future: java.util.concurrent.Future<*>): String? =
         try {
