@@ -8,6 +8,10 @@ data class ProcessingRequest(
     val previousStepCounter: RawReading.StepCounter? = null,
     var normalizedReadings: List<NormalizedReading> = emptyList(),
     var latestStepCounter: RawReading.StepCounter? = null,
+    /** Recent unsmoothed readings from the preceding batch of this session. */
+    val smoothingHistory: List<NormalizedReading> = emptyList(),
+    var smoothedReadings: List<NormalizedReading> = emptyList(),
+    var nextSmoothingHistory: List<NormalizedReading> = emptyList(),
 )
 
 sealed interface RawReading {
