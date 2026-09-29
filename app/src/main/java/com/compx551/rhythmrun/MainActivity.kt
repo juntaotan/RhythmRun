@@ -3,16 +3,11 @@ package com.compx551.rhythmrun
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
+import com.compx551.rhythmrun.ui.dashboard.DashboardScreen
+import com.compx551.rhythmrun.ui.dashboard.DashboardUiState
+import com.compx551.rhythmrun.ui.dashboard.WatchConnectionStatus
 import com.compx551.rhythmrun.ui.theme.RhythmRunTheme
 
 class MainActivity : ComponentActivity() {
@@ -29,20 +24,25 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun RhythmRunApp() {
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background,
-    ) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = stringResource(R.string.app_name),
-                style = MaterialTheme.typography.headlineLarge,
-            )
-        }
-    }
+    // TODO(Member 2 integration):
+    // Replace this temporary connection state with the real Data Layer status.
+    //
+    // TODO(Room integration):
+    // Replace null with the latest saved session from the phone repository.
+    val temporaryDashboardState = DashboardUiState(
+        watchConnectionStatus = WatchConnectionStatus.Disconnected,
+        lastRun = null,
+    )
+
+    DashboardScreen(
+        state = temporaryDashboardState,
+        onNewRunClick = {
+            // TODO: Navigate to Run Plan.
+        },
+        onHistoryClick = {
+            // TODO: Navigate to History.
+        },
+    )
 }
 
 @Preview(showBackground = true)
