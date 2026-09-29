@@ -12,6 +12,18 @@ data class ProcessingRequest(
     val smoothingHistory: List<NormalizedReading> = emptyList(),
     var smoothedReadings: List<NormalizedReading> = emptyList(),
     var nextSmoothingHistory: List<NormalizedReading> = emptyList(),
+    /** Last smoothed HR from the preceding batch, for pairing with the next speed reading. */
+    val previousSmoothedHeartRate: NormalizedReading.HeartRate? = null,
+    var latestSmoothedHeartRate: NormalizedReading.HeartRate? = null,
+    var speedHeartRateRatios: List<SpeedHeartRateRatio> = emptyList(),
+)
+
+/** Numerator for the future relative-efficiency index; no historical baseline is applied here. */
+data class SpeedHeartRateRatio(
+    val timestampMillis: Long,
+    val speedToHeartRateRatio: Double,
+    val speedMetersPerSecond: Double,
+    val heartRateBpm: Double,
 )
 
 sealed interface RawReading {
