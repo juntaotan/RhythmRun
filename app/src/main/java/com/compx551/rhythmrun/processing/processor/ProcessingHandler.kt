@@ -3,8 +3,8 @@ package com.compx551.rhythmrun.processing.processor
 /**
  * Data Processing
  *
- * The watch is configured with five sensors that collect metrics such as heart rate, acceleration,
- * speed, and cadence.
+ * The processor receives heart rate, acceleration, velocity and cumulative step counts from the
+ * watch. Cadence is derived from consecutive step-counter readings.
  *
  * The collected data is processed as follows:
  * - 1st. validate the data received from the watch in {@code ValidationHandler}
@@ -24,11 +24,12 @@ abstract class ProcessingHandler {
         return handler
     }
 
-    fun handle(request: String) {
-        if (!process(request)) {
+    fun handle(request: ProcessingRequest) {
+        if (process(request)) {
             next?.handle(request)
         }
     }
 
-    protected abstract fun process(request: String): Boolean
+    /** Return true to continue the chain; false to stop it. */
+    protected abstract fun process(request: ProcessingRequest): Boolean
 }
