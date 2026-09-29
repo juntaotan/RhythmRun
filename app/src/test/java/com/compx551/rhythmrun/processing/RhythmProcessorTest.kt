@@ -4,12 +4,14 @@ import com.compx551.rhythmrun.processing.processor.HistoricalRunAverage
 import com.compx551.rhythmrun.processing.processor.NormalizedReading
 import com.compx551.rhythmrun.processing.processor.PersistenceHandler
 import com.compx551.rhythmrun.processing.processor.ProcessingRequest
+import com.compx551.rhythmrun.processing.processor.RawReading
 import com.compx551.rhythmrun.processing.processor.SpeedHeartRateRatio
 import com.compx551.rhythmrun.processing.repository.RunningDetailsEntity
 import com.compx551.rhythmrun.processing.repository.RunningStore
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RhythmProcessorTest {
@@ -70,6 +72,27 @@ class RhythmProcessorTest {
 
         assertEquals(1, store.persistCalls)
         assertEquals(null, store.savedRatios.single().relativeEfficiency)
+    }
+
+    @Test
+    fun gpsReadingsAreProcessedAsPartOfTheExistingChain() = runBlocking {
+        val store = FakeRunningStore(emptyList())
+        val request = ProcessingRequest(
+            sessionId = "run-1",
+            sessionDetails = session("run-1"),
+            readings = listOf(
+                RawReading.Location(0, 0.0, 0.0, 5.0),
+                RawReading.Location(2_000, 0.0, 0.0001, 5.0),
+            ),
+        )
+
+        RhythmProcessor(store).calculateAndStoreEfficiency(request)
+
+        assertEquals(2, request.gpsResult.locations.size)
+        assertEquals(0, request.gpsResult.rejectedForAccuracy)
+        assertEquals(0, request.gpsResult.rejectedAsOutlier)
+        assertTrue(request.gpsResult.distanceMeters > 0.0)
+        assertEquals(1, store.persistCalls)
     }
 
     @Test

@@ -71,6 +71,9 @@ class NormalizingHandler : ProcessingHandler() {
                         previousSteps = reading
                     }
                 }
+
+                // GPS has its own accuracy, outlier, smoothing and distance stage.
+                is RawReading.Location -> Unit
             }
         }
 

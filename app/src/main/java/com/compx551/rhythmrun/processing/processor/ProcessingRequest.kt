@@ -19,6 +19,11 @@ data class ProcessingRequest(
     /** Last smoothed HR from the preceding batch, for pairing with the next speed reading. */
     val previousSmoothedHeartRate: NormalizedReading.HeartRate? = null,
     var latestSmoothedHeartRate: NormalizedReading.HeartRate? = null,
+    /** GPS context produced by the preceding batch of this session. */
+    val gpsState: GpsProcessingState = GpsProcessingState(),
+    /** Accepted and smoothed route fixes, plus distance added by this batch. */
+    var gpsResult: GpsProcessingResult = GpsProcessingResult(),
+    var nextGpsState: GpsProcessingState = GpsProcessingState(),
     /** Derived from completed sessions before this session; null when none exist. */
     var efficiencyBaseline: EfficiencyBaseline? = null,
     var speedHeartRateRatios: List<SpeedHeartRateRatio> = emptyList(),
@@ -70,6 +75,14 @@ sealed interface RawReading {
     data class StepCounter(
         override val timestampMillis: Long,
         val totalSteps: Long,
+    ) : RawReading
+
+    /** A GPS fix in WGS84 degrees, with the provider's horizontal 68% accuracy radius. */
+    data class Location(
+        override val timestampMillis: Long,
+        val latitude: Double,
+        val longitude: Double,
+        val accuracyMeters: Double,
     ) : RawReading
 }
 
