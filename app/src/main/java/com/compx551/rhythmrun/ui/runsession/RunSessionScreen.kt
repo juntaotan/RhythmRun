@@ -25,20 +25,23 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.compx551.rhythmrun.ui.theme.RhythmRunTheme
+import com.compx551.rhythmrun.domain.model.RunStage
+import com.compx551.rhythmrun.ui.common.accentColor
+import com.compx551.rhythmrun.ui.common.description
+import com.compx551.rhythmrun.ui.common.numberedLabel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RunSessionScreen(
     state: RunSessionUiState,
-    onDurationChange: (RunStageType, String) -> Unit,
-    onCadenceChange: (RunStageType, String) -> Unit,
+    onDurationChange: (RunStage, String) -> Unit,
+    onCadenceChange: (RunStage, String) -> Unit,
     onGuidanceEnabledChange: (Boolean) -> Unit,
     onStartRunClick: () -> Unit,
+    onPauseResumeClick: () -> Unit,
+    onFinishRunClick: () -> Unit,
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -67,17 +70,30 @@ fun RunSessionScreen(
                 modifier = Modifier.padding(innerPadding),
             )
 
-            RunSessionUiMode.Live -> FutureModeContent(
-                title = "Live run",
-                message = "Live Watch data will appear here after integration.",
+            RunSessionUiMode.Live -> LiveRunContent(
+                state = state.liveRun,
+                plannedStages = state.stages,
+                onPauseResumeClick = onPauseResumeClick,
+                onFinishRunClick = onFinishRunClick,
                 modifier = Modifier.padding(innerPadding),
             )
 
-            RunSessionUiMode.Summary -> FutureModeContent(
-                title = "Run summary",
-                message = "The completed session summary will appear here.",
-                modifier = Modifier.padding(innerPadding),
-            )
+            RunSessionUiMode.Summary -> {
+                val summary = state.summary
+                if (summary == null) {
+                    FutureModeContent(
+                        title = "Run summary unavailable",
+                        message = "No completed session data is available.",
+                        modifier = Modifier.padding(innerPadding),
+                    )
+                } else {
+                    RunSummaryContent(
+                        state = summary,
+                        onDoneClick = onBackClick,
+                        modifier = Modifier.padding(innerPadding),
+                    )
+                }
+            }
         }
     }
 }
@@ -85,8 +101,8 @@ fun RunSessionScreen(
 @Composable
 private fun RunPlanContent(
     state: RunSessionUiState,
-    onDurationChange: (RunStageType, String) -> Unit,
-    onCadenceChange: (RunStageType, String) -> Unit,
+    onDurationChange: (RunStage, String) -> Unit,
+    onCadenceChange: (RunStage, String) -> Unit,
     onGuidanceEnabledChange: (Boolean) -> Unit,
     onStartRunClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -204,7 +220,7 @@ private fun StagePlanCard(
     onDurationChange: (String) -> Unit,
     onCadenceChange: (String) -> Unit,
 ) {
-    val accentColor = stageAccentColor(state.stage)
+    val accentColor = state.stage.accentColor()
 
     OutlinedCard(
         modifier = Modifier.fillMaxWidth(),
@@ -224,12 +240,12 @@ private fun StagePlanCard(
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 Text(
-                    text = stageTitle(state.stage),
+                    text = state.stage.numberedLabel,
                     color = accentColor,
                     style = MaterialTheme.typography.titleMedium,
                 )
                 Text(
-                    text = stageDescription(state.stage),
+                    text = state.stage.description,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall,
                 )
@@ -321,59 +337,6 @@ private fun FutureModeContent(
             modifier = Modifier.padding(top = 8.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyLarge,
-        )
-    }
-}
-
-@Composable
-private fun stageAccentColor(stage: RunStageType): Color {
-    return when (stage) {
-        RunStageType.WarmUp -> MaterialTheme.colorScheme.primary
-        RunStageType.Running -> MaterialTheme.colorScheme.primaryContainer
-        RunStageType.SlowDown -> MaterialTheme.colorScheme.secondary
-        RunStageType.Recovery -> MaterialTheme.colorScheme.primary
-    }
-}
-
-private fun stageTitle(stage: RunStageType): String {
-    return when (stage) {
-        RunStageType.WarmUp -> "1. Warm-up"
-        RunStageType.Running -> "2. Main run"
-        RunStageType.SlowDown -> "3. Slow-down"
-        RunStageType.Recovery -> "4. Recovery"
-    }
-}
-
-private fun stageDescription(stage: RunStageType): String {
-    return when (stage) {
-        RunStageType.WarmUp -> "Prepare gradually for the running stage"
-        RunStageType.Running -> "Follow the main target step cadence"
-        RunStageType.SlowDown -> "Reduce cadence before recovery"
-        RunStageType.Recovery -> "Continue recording without cadence guidance"
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-private fun RunSessionScreenPreview() {
-    RhythmRunTheme {
-        RunSessionScreen(
-            // Preview-only sample values; these are not Watch or Room data.
-            state = RunSessionUiState(
-                mode = RunSessionUiMode.Plan,
-                stages = listOf(
-                    StagePlanUiState(RunStageType.WarmUp, "8", "145"),
-                    StagePlanUiState(RunStageType.Running, "25", "175"),
-                    StagePlanUiState(RunStageType.SlowDown, "7", "150"),
-                    StagePlanUiState(RunStageType.Recovery, "5", null),
-                ),
-                guidanceEnabled = true,
-            ),
-            onDurationChange = { _, _ -> },
-            onCadenceChange = { _, _ -> },
-            onGuidanceEnabledChange = {},
-            onStartRunClick = {},
-            onBackClick = {},
         )
     }
 }

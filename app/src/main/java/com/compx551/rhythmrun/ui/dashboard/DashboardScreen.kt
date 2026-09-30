@@ -16,9 +16,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.compx551.rhythmrun.ui.theme.RhythmRunTheme
 
 enum class WatchConnectionStatus {
     Connected,
@@ -34,6 +32,7 @@ data class LastRunUiModel(
 data class DashboardUiState(
     val watchConnectionStatus: WatchConnectionStatus,
     val lastRun: LastRunUiModel?,
+    val hasResumableSession: Boolean = false,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -41,6 +40,7 @@ data class DashboardUiState(
 fun DashboardScreen(
     state: DashboardUiState,
     onNewRunClick: () -> Unit,
+    onResumeRunClick: () -> Unit,
     onHistoryClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -57,6 +57,7 @@ fun DashboardScreen(
         DashboardContent(
             state = state,
             onNewRunClick = onNewRunClick,
+            onResumeRunClick = onResumeRunClick,
             onHistoryClick = onHistoryClick,
             contentPadding = innerPadding,
         )
@@ -67,6 +68,7 @@ fun DashboardScreen(
 private fun DashboardContent(
     state: DashboardUiState,
     onNewRunClick: () -> Unit,
+    onResumeRunClick: () -> Unit,
     onHistoryClick: () -> Unit,
     contentPadding: PaddingValues,
 ) {
@@ -142,10 +144,10 @@ private fun DashboardContent(
         }
 
         Button(
-            onClick = onNewRunClick,
+            onClick = if (state.hasResumableSession) onResumeRunClick else onNewRunClick,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(text = "New Run")
+            Text(text = if (state.hasResumableSession) "Resume Run" else "New Run")
         }
 
         OutlinedButton(
@@ -154,20 +156,5 @@ private fun DashboardContent(
         ) {
             Text(text = "History")
         }
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-private fun DashboardScreenPreview() {
-    RhythmRunTheme {
-        DashboardScreen(
-            state = DashboardUiState(
-                watchConnectionStatus = WatchConnectionStatus.Disconnected,
-                lastRun = null,
-            ),
-            onNewRunClick = {},
-            onHistoryClick = {},
-        )
     }
 }

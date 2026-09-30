@@ -1,20 +1,15 @@
 package com.compx551.rhythmrun.ui.runsession
 
+import com.compx551.rhythmrun.domain.model.RunStage
+
 enum class RunSessionUiMode {
     Plan,
     Live,
     Summary,
 }
 
-enum class RunStageType {
-    WarmUp,
-    Running,
-    SlowDown,
-    Recovery,
-}
-
 data class StagePlanUiState(
-    val stage: RunStageType,
+    val stage: RunStage,
     val durationMinutesInput: String,
     val targetCadenceSpmInput: String?,
 ) {
@@ -31,11 +26,13 @@ data class RunSessionUiState(
     val mode: RunSessionUiMode,
     val stages: List<StagePlanUiState>,
     val guidanceEnabled: Boolean,
+    val liveRun: LiveRunUiState = LiveRunUiState(),
+    val summary: RunSummaryUiState? = null,
 ) {
     val isPlanValid: Boolean
         get() {
             val containsEveryStage =
-                stages.map { it.stage }.toSet() == RunStageType.entries.toSet()
+                stages.map { it.stage }.toSet() == RunStage.entries.toSet()
 
             return containsEveryStage && stages.all { it.isValid }
         }
@@ -62,22 +59,22 @@ fun createInitialRunSessionUiState(): RunSessionUiState {
         mode = RunSessionUiMode.Plan,
         stages = listOf(
             StagePlanUiState(
-                stage = RunStageType.WarmUp,
+                stage = RunStage.WarmUp,
                 durationMinutesInput = "",
                 targetCadenceSpmInput = "",
             ),
             StagePlanUiState(
-                stage = RunStageType.Running,
+                stage = RunStage.Running,
                 durationMinutesInput = "",
                 targetCadenceSpmInput = "",
             ),
             StagePlanUiState(
-                stage = RunStageType.SlowDown,
+                stage = RunStage.SlowDown,
                 durationMinutesInput = "",
                 targetCadenceSpmInput = "",
             ),
             StagePlanUiState(
-                stage = RunStageType.Recovery,
+                stage = RunStage.Recovery,
                 durationMinutesInput = "",
                 targetCadenceSpmInput = null,
             ),
