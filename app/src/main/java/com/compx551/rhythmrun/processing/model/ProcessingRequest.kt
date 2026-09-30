@@ -13,10 +13,7 @@ data class ProcessingRequest(
     val readings: List<RawReading>,
     /** Session metadata/summary supplied by the session owner for persistence. */
     val sessionDetails: RunningDetailsEntity? = null,
-    /** Last persisted step count before this batch, when processing a continuing session. */
-    val previousStepCounter: RawReading.StepCounter? = null,
     var normalizedReadings: List<NormalizedReading> = emptyList(),
-    var latestStepCounter: RawReading.StepCounter? = null,
     /** Recent unsmoothed readings from the preceding batch of this session. */
     val smoothingHistory: List<NormalizedReading> = emptyList(),
     var smoothedReadings: List<NormalizedReading> = emptyList(),

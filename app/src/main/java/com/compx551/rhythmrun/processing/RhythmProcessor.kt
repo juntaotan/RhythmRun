@@ -4,25 +4,22 @@ import com.compx551.rhythmrun.processing.model.ProcessedReading
 import com.compx551.rhythmrun.processing.model.ProcessingRequest
 import com.compx551.rhythmrun.processing.processor.NormalizingHandler
 import com.compx551.rhythmrun.processing.processor.ValidationHandler
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /** Runs the processing workflow through validation and normalization only. */
 class RhythmProcessor {
-    private val recordedReadings = mutableListOf<ProcessedReading>()
-
-    /** All validated and normalized sensor snapshots, in processing order. */
-    val processedReadings: List<ProcessedReading>
-        get() = recordedReadings.toList()
+    /** All validated and normalized sensor snapshots for this exercise event. */
+    val processedReadings = MutableStateFlow<List<ProcessedReading>>(emptyList())
 
     private val validationHandler = ValidationHandler()
-    private val normalizingHandler = NormalizingHandler(recordedReadings)
+    private val normalizingHandler = NormalizingHandler(processedReadings)
 
     init {
         validationHandler.setNext(normalizingHandler)
     }
 
-    /** Validates and normalizes one request, then returns all readings recorded so far. */
-    suspend fun rhythmProcessor(request: ProcessingRequest): List<ProcessedReading> {
+    /** Validates and normalizes one request. */
+    suspend fun rhythmProcessor(request: ProcessingRequest) {
         validationHandler.handle(request)
-        return processedReadings
     }
 }

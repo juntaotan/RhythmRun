@@ -6,5 +6,11 @@ data class ProcessedReading(
     val accelerationPerSecond: Double,
     val velocityMetersPerSecond: Double,
     val stepCounterPerSecond: Double,
-    val stepCounterTotal: Long,
+    val location: ProcessedLocation? = null,
+)
+
+data class ProcessedLocation(
+    val latitude: Double,
+    val longitude: Double,
+    val accuracyMeters: Double,
 )

@@ -15,11 +15,12 @@ class ValidationHandler : ProcessingHandler() {
                 "Reading $index has a negative timestamp"
             }
             when (reading) {
+                /** Heart rate is a positive number in the range 20 to 250 */
                 is RawReading.HeartRate -> require(
                     reading.beatsPerMinute.isFinite()
                             && reading.beatsPerMinute in 20.0..250.0,
                 ) { "Reading $index has an implausible heart rate" }
-
+                /** Acceleration is in the range 20 to 250 */
                 is RawReading.Acceleration -> {
                     val limit = when (reading.unit) {
                         AccelerationUnit.METERS_PER_SECOND_SQUARED -> 200.0
@@ -29,7 +30,7 @@ class ValidationHandler : ProcessingHandler() {
                             && it in -limit..limit }
                     ) { "Reading $index has an implausible acceleration" }
                 }
-
+                /** Velocity is in the range 25 to 90 */
                 is RawReading.Velocity -> {
                     val limit = when (reading.unit) {
                         VelocityUnit.METERS_PER_SECOND -> 25.0
@@ -39,8 +40,8 @@ class ValidationHandler : ProcessingHandler() {
                             && reading.value in 0.0..limit
                     ) { "Reading $index has an implausible velocity" }
                 }
-
-                is RawReading.StepCounter -> require(reading.totalSteps >= 0L) {
+                /** Step count is a non-negative number */
+                is RawReading.StepCounter -> require(reading.stepsPerSecond >= 0L) {
                     "Reading $index has a negative step count"
                 }
                 /** Validate latitude and longitude and GPS accuracy */

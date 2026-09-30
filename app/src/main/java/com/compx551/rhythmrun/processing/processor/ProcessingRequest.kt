@@ -33,10 +33,10 @@ sealed interface RawReading {
         val unit: VelocityUnit = VelocityUnit.METERS_PER_SECOND,
     ) : RawReading
 
-    /** Sensor.TYPE_STEP_COUNTER reports a cumulative count, not steps per minute. */
+    /** Number of steps reported by the UI for this one-second exercise interval. */
     data class StepCounter(
         override val timestampMillis: Long,
-        val totalSteps: Long,
+        val stepsPerSecond: Long,
     ) : RawReading
 
     /** A GPS fix in WGS84 degrees, with the provider's horizontal 68% accuracy radius. */
