@@ -1,17 +1,17 @@
 package com.compx551.rhythmrun.processing
 
+import com.compx551.rhythmrun.processing.model.EfficiencyBaseline
 import com.compx551.rhythmrun.processing.model.ProcessedReading
-import com.compx551.rhythmrun.processing.model.ProcessingRequest
 import com.compx551.rhythmrun.processing.processor.AnalyzingHandler
 import com.compx551.rhythmrun.processing.processor.NormalizingHandler
 import com.compx551.rhythmrun.processing.processor.PersistenceHandler
+import com.compx551.rhythmrun.processing.processor.RawReading
 import com.compx551.rhythmrun.processing.processor.SmoothingHandler
 import com.compx551.rhythmrun.processing.processor.ValidationHandler
 import kotlinx.coroutines.flow.MutableStateFlow
 
-/** Runs the processing workflow through validation and normalization only. */
+/** Processes one exercise event from raw sensor values to a persisted reading. */
 class RhythmProcessor {
-    /** All validated and normalized sensor snapshots for this exercise event. */
     val processedReadings = MutableStateFlow<List<ProcessedReading>>(emptyList())
 
     private val validationHandler = ValidationHandler()
@@ -20,16 +20,14 @@ class RhythmProcessor {
     private val analyzingHandler = AnalyzingHandler()
     private val persistenceHandler = PersistenceHandler(processedReadings)
 
-    init {
-        validationHandler
-            .setNext(normalizingHandler)
-            .setNext(smoothingHandler)
-            .setNext(analyzingHandler)
-            .setNext(persistenceHandler)
-    }
-
-    /** Validates and normalizes one request. */
-    suspend fun rhythmProcessor(request: ProcessingRequest) {
-        validationHandler.handle(request)
+    fun process(
+        readings: List<RawReading>,
+        baseline: EfficiencyBaseline,
+    ) {
+        validationHandler.validate(readings)
+        val normalizedReading = normalizingHandler.normalize(readings)
+        val smoothedReading = smoothingHandler.smooth(normalizedReading)
+        val analyzedReading = analyzingHandler.analyze(smoothedReading, baseline)
+        persistenceHandler.persist(analyzedReading)
     }
 }

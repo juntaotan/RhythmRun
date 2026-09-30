@@ -3,28 +3,23 @@ package com.compx551.rhythmrun.processing.processor
 import com.compx551.rhythmrun.processing.model.ProcessedLocation
 import com.compx551.rhythmrun.processing.model.ProcessedReading
 
-/** Applies a five-sample weighted moving average before analysis. */
-class SmoothingHandler : ProcessingHandler() {
+/** Applies a five-sample weighted moving average to normalized readings. */
+class SmoothingHandler {
     private val window = ArrayDeque<ProcessedReading>()
 
-    override fun process(request: ProcessingRequest): Boolean {
-        val currentReading = requireNotNull(request.processedReading) {
-            "Normalization must complete before smoothing"
-        }
-
-        window.addLast(currentReading)
+    fun smooth(reading: ProcessedReading): ProcessedReading {
+        window.addLast(reading)
         while (window.size > WINDOW_SIZE) {
             window.removeFirst()
         }
 
-        request.processedReading = currentReading.copy(
+        return reading.copy(
             heartRateBpm = window.weightedAverage { it.heartRateBpm },
             accelerationPerSecond = window.weightedAverage { it.accelerationPerSecond },
             velocityMetersPerSecond = window.weightedAverage { it.velocityMetersPerSecond },
             stepCounterPerSecond = window.weightedAverage { it.stepCounterPerSecond },
             location = smoothLocation(),
         )
-        return true
     }
 
     private fun smoothLocation(): ProcessedLocation? {

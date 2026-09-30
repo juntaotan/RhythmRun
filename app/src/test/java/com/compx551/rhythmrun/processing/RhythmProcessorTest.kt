@@ -1,159 +1,44 @@
 package com.compx551.rhythmrun.processing
 
-import com.compx551.rhythmrun.processing.processor.HistoricalRunAverage
-import com.compx551.rhythmrun.processing.processor.NormalizedReading
-import com.compx551.rhythmrun.processing.processor.PersistenceHandler
-import com.compx551.rhythmrun.processing.processor.ProcessingRequest
+import com.compx551.rhythmrun.processing.model.EfficiencyBaseline
 import com.compx551.rhythmrun.processing.processor.RawReading
-import com.compx551.rhythmrun.processing.processor.SpeedHeartRateRatio
-import com.compx551.rhythmrun.processing.repository.RunningDetailsEntity
-import com.compx551.rhythmrun.processing.repository.RunningStore
-import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RhythmProcessorTest {
     @Test
-    fun chainSavesSessionAndRelativeEfficiencyTogether() = runBlocking {
-        val store = FakeRunningStore(listOf(HistoricalRunAverage(1.0, 100.0)))
-        val session = session("run-1")
-        val request = ProcessingRequest(
-            sessionId = session.sessionId,
-            sessionDetails = session,
-            readings = emptyList(),
-            smoothedReadings = listOf(
-                NormalizedReading.HeartRate(1_000, 100.0),
-                NormalizedReading.Velocity(1_000, 2.0),
-            ),
+    fun processesAndPersistsOneCompleteReading() {
+        val processor = RhythmProcessor()
+
+        processor.process(
+            readings = event(speed = 4.0, heartRate = 100.0),
+            baseline = EfficiencyBaseline(2.0, 100.0, 1),
         )
 
-        RhythmProcessor(store).calculateAndStoreEfficiency(request)
-
-        assertEquals(1, store.persistCalls)
-        assertEquals(request.analysisResult?.ratios, store.savedRatios)
-        assertEquals(session, store.savedSession)
-        assertEquals(1_000L, store.requestedHistoryBefore)
-        assertEquals(1, store.savedRatios.size)
-        assertEquals(0.02, store.savedRatios.single().speedToHeartRateRatio, 1e-9)
-        assertEquals(2.0, store.savedRatios.single().relativeEfficiency!!, 1e-9)
+        val reading = processor.processedReadings.value.single()
+        assertEquals(4.0, reading.velocityMetersPerSecond, 0.0)
+        assertEquals(2.0, reading.efficiency!!, 1e-9)
     }
 
     @Test
-    fun invalidRequestDoesNotReachPersistence() {
-        val store = FakeRunningStore(emptyList())
-        val request = ProcessingRequest(
-            sessionId = "run-1",
-            sessionDetails = session("different-id"),
-            readings = emptyList(),
-        )
+    fun invalidEventIsNotPersisted() {
+        val processor = RhythmProcessor()
 
         assertThrows(IllegalArgumentException::class.java) {
-            runBlocking { RhythmProcessor(store).calculateAndStoreEfficiency(request) }
+            processor.process(
+                readings = event(speed = 4.0, heartRate = 300.0),
+                baseline = EfficiencyBaseline(2.0, 100.0, 1),
+            )
         }
-        assertEquals(0, store.persistCalls)
+
+        assertEquals(emptyList<Any>(), processor.processedReadings.value)
     }
 
-    @Test
-    fun invalidWatchReadingDoesNotReachPersistence() {
-        val store = FakeRunningStore(emptyList())
-        val request = ProcessingRequest(
-            sessionId = "run-1",
-            sessionDetails = session("run-1"),
-            readings = listOf(RawReading.HeartRate(1_000, 300.0)),
-        )
-
-        assertThrows(IllegalArgumentException::class.java) {
-            runBlocking { RhythmProcessor(store).calculateAndStoreEfficiency(request) }
-        }
-        assertEquals(0, store.persistCalls)
-    }
-
-    @Test
-    fun noHistoryStillSavesSessionWithNullEfficiencyIndex() = runBlocking {
-        val store = FakeRunningStore(emptyList())
-        val request = ProcessingRequest(
-            sessionId = "run-1",
-            sessionDetails = session("run-1"),
-            readings = emptyList(),
-            smoothedReadings = listOf(
-                NormalizedReading.HeartRate(1_000, 100.0),
-                NormalizedReading.Velocity(1_000, 2.0),
-            ),
-        )
-
-        RhythmProcessor(store).calculateAndStoreEfficiency(request)
-
-        assertEquals(1, store.persistCalls)
-        assertEquals(null, store.savedRatios.single().relativeEfficiency)
-    }
-
-    @Test
-    fun gpsReadingsAreProcessedAsPartOfTheExistingChain() = runBlocking {
-        val store = FakeRunningStore(emptyList())
-        val request = ProcessingRequest(
-            sessionId = "run-1",
-            sessionDetails = session("run-1"),
-            readings = listOf(
-                RawReading.Location(0, 0.0, 0.0, 5.0),
-                RawReading.Location(2_000, 0.0, 0.0001, 5.0),
-            ),
-        )
-
-        RhythmProcessor(store).calculateAndStoreEfficiency(request)
-
-        assertEquals(2, request.gpsResult.locations.size)
-        assertEquals(0, request.gpsResult.rejectedForAccuracy)
-        assertEquals(0, request.gpsResult.rejectedAsOutlier)
-        assertTrue(request.gpsResult.distanceMeters > 0.0)
-        assertEquals(1, store.persistCalls)
-    }
-
-    @Test
-    fun persistenceRequiresThePreviousAnalysisStep() {
-        val store = FakeRunningStore(emptyList())
-        val request = ProcessingRequest(
-            sessionId = "run-1",
-            sessionDetails = session("run-1"),
-            readings = emptyList(),
-        )
-
-        assertThrows(IllegalArgumentException::class.java) {
-            runBlocking { PersistenceHandler(store).handle(request) }
-        }
-        assertEquals(0, store.persistCalls)
-    }
-
-    private fun session(id: String) = RunningDetailsEntity(
-        sessionId = id,
-        timestamp = 1_000,
-        runingId = id,
-        startTime = 1_000,
-        endTime = 2_000,
-        averageHeartRate = 100.0,
-        averageAccelerate = 1.0,
-        averageVelocity = 2.0,
-        averageCadence = 160.0,
+    private fun event(speed: Double, heartRate: Double): List<RawReading> = listOf(
+        RawReading.HeartRate(1_000, heartRate),
+        RawReading.Acceleration(1_000, 1.0, 0.0, 0.0),
+        RawReading.Velocity(1_000, speed),
+        RawReading.StepCounter(1_000, 3),
     )
-
-    private class FakeRunningStore(
-        private val history: List<HistoricalRunAverage>,
-    ) : RunningStore {
-        var requestedHistoryBefore: Long? = null
-        var persistCalls = 0
-        var savedSession: RunningDetailsEntity? = null
-        var savedRatios: List<SpeedHeartRateRatio> = emptyList()
-
-        override suspend fun getHistoricalAverages(beforeStartTime: Long): List<HistoricalRunAverage> {
-            requestedHistoryBefore = beforeStartTime
-            return history
-        }
-
-        override suspend fun persistBatch(session: RunningDetailsEntity, ratios: List<SpeedHeartRateRatio>) {
-            persistCalls++
-            savedSession = session
-            savedRatios = ratios
-        }
-    }
 }
