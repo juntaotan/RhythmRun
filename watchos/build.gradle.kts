@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -51,10 +52,15 @@ dependencies {
     implementation(libs.androidx.tiles)
     implementation(libs.androidx.tiles.tooling.preview)
     implementation(libs.androidx.watchface.complications.data.source.ktx)
+    implementation(libs.androidx.health.services.client)
+    implementation(libs.androidx.fragment)
+    implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.wear.tooling.preview)
     implementation(libs.compose.ui.tooling)
     implementation(libs.guava)
     implementation(libs.play.services.wearable)
+    ksp(libs.androidx.room.compiler)
+    testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
