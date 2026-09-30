@@ -59,4 +59,7 @@ dependencies {
     implementation(libs.material)
 
     ksp(libs.androidx.room3.compiler)
+    testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(libs.androidx.junit)
 }
