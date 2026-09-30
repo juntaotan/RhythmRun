@@ -2,7 +2,9 @@ package com.compx551.rhythmrun.processing
 
 import com.compx551.rhythmrun.processing.model.ProcessedReading
 import com.compx551.rhythmrun.processing.model.ProcessingRequest
+import com.compx551.rhythmrun.processing.processor.AnalyzingHandler
 import com.compx551.rhythmrun.processing.processor.NormalizingHandler
+import com.compx551.rhythmrun.processing.processor.PersistenceHandler
 import com.compx551.rhythmrun.processing.processor.ValidationHandler
 import kotlinx.coroutines.flow.MutableStateFlow
 
@@ -12,10 +14,15 @@ class RhythmProcessor {
     val processedReadings = MutableStateFlow<List<ProcessedReading>>(emptyList())
 
     private val validationHandler = ValidationHandler()
-    private val normalizingHandler = NormalizingHandler(processedReadings)
+    private val normalizingHandler = NormalizingHandler()
+    private val analyzingHandler = AnalyzingHandler()
+    private val persistenceHandler = PersistenceHandler(processedReadings)
 
     init {
-        validationHandler.setNext(normalizingHandler)
+        validationHandler
+            .setNext(normalizingHandler)
+            .setNext(analyzingHandler)
+            .setNext(persistenceHandler)
     }
 
     /** Validates and normalizes one request. */

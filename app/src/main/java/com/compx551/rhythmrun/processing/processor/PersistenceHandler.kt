@@ -1,16 +1,19 @@
 package com.compx551.rhythmrun.processing.processor
 
-import com.compx551.rhythmrun.processing.repository.RunningStore
+import com.compx551.rhythmrun.processing.model.ProcessedReading
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 
-/** Final chain step: save the session row and calculated score rows in one transaction. */
-class PersistenceHandler(private val store: RunningStore) : ProcessingHandler() {
-    override suspend fun processSuspending(request: ProcessingRequest): Boolean {
-        val session = requireNotNull(request.sessionDetails) { "Session details are required for persistence" }
-        require(session.sessionId == request.sessionId) { "Session IDs must match" }
-        val result = requireNotNull(request.analysisResult) {
+/** Stores a fully normalized and analyzed reading in the exercise event list. */
+class PersistenceHandler(
+    private val processedReadings: MutableStateFlow<List<ProcessedReading>>,
+) : ProcessingHandler() {
+
+    override fun process(request: ProcessingRequest): Boolean {
+        val reading = requireNotNull(request.processedReading) {
             "Analysis must complete before persistence"
         }
-        store.persistBatch(session, result.ratios)
+        processedReadings.update { currentReadings -> currentReadings + reading }
         return true
     }
 }

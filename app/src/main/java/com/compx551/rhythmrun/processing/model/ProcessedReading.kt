@@ -7,6 +7,7 @@ data class ProcessedReading(
     val velocityMetersPerSecond: Double,
     val stepCounterPerSecond: Double,
     val location: ProcessedLocation? = null,
+    val efficiency: Double? = null,
 )
 
 data class ProcessedLocation(

@@ -11,6 +11,7 @@ import com.compx551.rhythmrun.processing.repository.RunningDetailsEntity
 data class ProcessingRequest(
     val sessionId: String,
     val readings: List<RawReading>,
+    var processedReading: ProcessedReading? = null,
     /** Session metadata/summary supplied by the session owner for persistence. */
     val sessionDetails: RunningDetailsEntity? = null,
     var normalizedReadings: List<NormalizedReading> = emptyList(),

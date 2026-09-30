@@ -2,14 +2,10 @@ package com.compx551.rhythmrun.processing.processor
 
 import com.compx551.rhythmrun.processing.model.ProcessedReading
 import com.compx551.rhythmrun.processing.model.ProcessedLocation
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.update
 import kotlin.math.sqrt
 
-/** Normalizes validated sensor data directly into the exercise event's reading list. */
-class NormalizingHandler(
-    private val processedReadings: MutableStateFlow<List<ProcessedReading>>,
-) : ProcessingHandler() {
+/** Normalizes validated sensor data for the analysis stage. */
+class NormalizingHandler : ProcessingHandler() {
 
     override fun process(request: ProcessingRequest): Boolean {
         var heartRateBpm: Double? = null
@@ -58,7 +54,7 @@ class NormalizingHandler(
                 velocityMetersPerSecond != null &&
                 stepCounterPerSecond != null
             ) {
-                val processedReading = ProcessedReading(
+                request.processedReading = ProcessedReading(
                     timestampMillis = timestamp,
                     heartRateBpm = heartRateBpm,
                     accelerationPerSecond = accelerationPerSecond,
@@ -66,9 +62,6 @@ class NormalizingHandler(
                     stepCounterPerSecond = stepCounterPerSecond,
                     location = location,
                 )
-                processedReadings.update { currentReadings ->
-                    currentReadings + processedReading
-                }
             }
         }
 
