@@ -6,47 +6,38 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 
-/** Validates one raw exercise event before normalization. */
+/** Replaces invalid sensor values without rejecting the rest of the exercise event. */
 class ValidationHandler {
     private var previousLocation: RawReading.Location? = null
 
-    fun validate(readings: List<RawReading>) {
+    fun validate(readings: List<RawReading>): List<RawReading> {
         require(readings.isNotEmpty()) { "Exercise event must contain sensor readings" }
-        require(readings.any { it is RawReading.HeartRate }) {
-            "Exercise event must contain heart-rate data"
-        }
-        require(readings.any { it is RawReading.Acceleration }) {
-            "Exercise event must contain acceleration data"
-        }
-        require(readings.any { it is RawReading.Velocity }) {
-            "Exercise event must contain velocity data"
-        }
-        require(readings.any { it is RawReading.StepCounter }) {
-            "Exercise event must contain step data"
-        }
+        var latestValidLocation = previousLocation
 
-        var latestLocation = previousLocation
-        readings.sortedBy(RawReading::timestampMillis).forEachIndexed { index, reading ->
-            require(reading.timestampMillis >= 0L) {
-                "Reading $index has a negative timestamp"
-            }
-
+        val validatedReadings = readings.map { reading ->
+            val timestamp = reading.timestampMillis.coerceAtLeast(0L)
             when (reading) {
-                is RawReading.HeartRate -> require(
-                    reading.beatsPerMinute.isFinite() &&
-                        reading.beatsPerMinute in 20.0..250.0,
-                ) { "Reading $index has an implausible heart rate" }
+                is RawReading.HeartRate -> reading.copy(
+                    timestampMillis = timestamp,
+                    beatsPerMinute = reading.beatsPerMinute.takeIf {
+                        it.isFinite() && it in 20.0..250.0
+                    } ?: 0.0,
+                )
 
                 is RawReading.Acceleration -> {
                     val limit = when (reading.unit) {
                         AccelerationUnit.METERS_PER_SECOND_SQUARED -> 200.0
                         AccelerationUnit.STANDARD_GRAVITY -> 20.0
                     }
-                    require(
-                        listOf(reading.x, reading.y, reading.z).all {
-                            it.isFinite() && it in -limit..limit
-                        },
-                    ) { "Reading $index has an implausible acceleration" }
+                    val isValid = listOf(reading.x, reading.y, reading.z).all {
+                        it.isFinite() && it in -limit..limit
+                    }
+                    reading.copy(
+                        timestampMillis = timestamp,
+                        x = if (isValid) reading.x else 0.0,
+                        y = if (isValid) reading.y else 0.0,
+                        z = if (isValid) reading.z else 0.0,
+                    )
                 }
 
                 is RawReading.Velocity -> {
@@ -54,45 +45,60 @@ class ValidationHandler {
                         VelocityUnit.METERS_PER_SECOND -> 25.0
                         VelocityUnit.KILOMETERS_PER_HOUR -> 90.0
                     }
-                    require(reading.value.isFinite() && reading.value in 0.0..limit) {
-                        "Reading $index has an implausible velocity"
-                    }
+                    reading.copy(
+                        timestampMillis = timestamp,
+                        value = reading.value.takeIf {
+                            it.isFinite() && it in 0.0..limit
+                        } ?: 0.0,
+                    )
                 }
 
-                is RawReading.StepCounter -> require(reading.stepsPerSecond >= 0L) {
-                    "Reading $index has a negative step count"
-                }
+                is RawReading.StepCounter -> reading.copy(
+                    timestampMillis = timestamp,
+                    stepsPerSecond = reading.stepsPerSecond.coerceAtLeast(0L),
+                )
 
                 is RawReading.Location -> {
-                    require(reading.latitude.isFinite() && reading.latitude in -90.0..90.0) {
-                        "Reading $index has an invalid latitude"
-                    }
-                    require(reading.longitude.isFinite() && reading.longitude in -180.0..180.0) {
-                        "Reading $index has an invalid longitude"
-                    }
-                    require(
-                        reading.accuracyMeters.isFinite() &&
-                            reading.accuracyMeters in 0.0..MAXIMUM_ACCURACY_METERS,
-                    ) { "Reading $index has an invalid GPS accuracy" }
+                    val hasValidValues =
+                        reading.latitude.isFinite() && reading.latitude in -90.0..90.0 &&
+                            reading.longitude.isFinite() && reading.longitude in -180.0..180.0 &&
+                            reading.accuracyMeters.isFinite() &&
+                            reading.accuracyMeters in 0.0..MAXIMUM_ACCURACY_METERS
+                    val hasPossibleSpeed = hasValidValues && hasPossibleSpeed(
+                        previous = latestValidLocation,
+                        current = reading,
+                    )
 
-                    val previous = latestLocation
-                    if (previous != null) {
-                        val elapsedSeconds =
-                            (reading.timestampMillis - previous.timestampMillis) / 1_000.0
-                        require(elapsedSeconds > 0.0) {
-                            "Reading $index has an invalid GPS timestamp"
+                    if (hasPossibleSpeed) {
+                        reading.copy(timestampMillis = timestamp).also {
+                            latestValidLocation = it
                         }
-                        val speedMetersPerSecond = distanceMeters(previous, reading) / elapsedSeconds
-                        require(
-                            speedMetersPerSecond.isFinite() &&
-                                speedMetersPerSecond <= MAXIMUM_SPEED_METERS_PER_SECOND,
-                        ) { "Reading $index has an impossible GPS speed" }
+                    } else {
+                        RawReading.Location(
+                            timestampMillis = timestamp,
+                            latitude = 0.0,
+                            longitude = 0.0,
+                            accuracyMeters = 0.0,
+                        )
                     }
-                    latestLocation = reading
                 }
             }
         }
-        previousLocation = latestLocation
+
+        previousLocation = latestValidLocation
+        return validatedReadings
+    }
+
+    private fun hasPossibleSpeed(
+        previous: RawReading.Location?,
+        current: RawReading.Location,
+    ): Boolean {
+        if (previous == null) return true
+        val elapsedSeconds = (current.timestampMillis - previous.timestampMillis) / 1_000.0
+        if (elapsedSeconds <= 0.0) return false
+        val speedMetersPerSecond = distanceMeters(previous, current) / elapsedSeconds
+        return speedMetersPerSecond.isFinite() &&
+            speedMetersPerSecond <= MAXIMUM_SPEED_METERS_PER_SECOND
     }
 
     private fun distanceMeters(first: RawReading.Location, second: RawReading.Location): Double {

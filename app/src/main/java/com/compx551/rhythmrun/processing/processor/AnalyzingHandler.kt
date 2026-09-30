@@ -10,8 +10,15 @@ class AnalyzingHandler {
         reading: ProcessedReading,
         baseline: EfficiencyBaseline,
     ): ProcessedReading = reading.copy(
-        efficiency = (reading.velocityMetersPerSecond / reading.heartRateBpm) /
-            (baseline.averageSpeedMetersPerSecond / baseline.averageHeartRateBpm),
+        efficiency = if (reading.heartRateBpm > 0.0 &&
+            baseline.averageSpeedMetersPerSecond > 0.0 &&
+            baseline.averageHeartRateBpm > 0.0
+        ) {
+            (reading.velocityMetersPerSecond / reading.heartRateBpm) /
+                (baseline.averageSpeedMetersPerSecond / baseline.averageHeartRateBpm)
+        } else {
+            0.0
+        },
     )
 }
 

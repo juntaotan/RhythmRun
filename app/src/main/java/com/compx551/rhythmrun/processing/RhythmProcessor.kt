@@ -24,8 +24,8 @@ class RhythmProcessor {
         readings: List<RawReading>,
         baseline: EfficiencyBaseline,
     ) {
-        validationHandler.validate(readings)
-        val normalizedReading = normalizingHandler.normalize(readings)
+        val validatedReadings = validationHandler.validate(readings)
+        val normalizedReading = normalizingHandler.normalize(validatedReadings)
         val smoothedReading = smoothingHandler.smooth(normalizedReading)
         val analyzedReading = analyzingHandler.analyze(smoothedReading, baseline)
         persistenceHandler.persist(analyzedReading)
