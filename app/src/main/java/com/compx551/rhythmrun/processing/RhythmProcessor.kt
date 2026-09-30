@@ -1,39 +1,28 @@
 package com.compx551.rhythmrun.processing
 
-import com.compx551.rhythmrun.processing.processor.AnalyzingHandler
-import com.compx551.rhythmrun.processing.processor.GpsProcessingHandler
-import com.compx551.rhythmrun.processing.processor.PersistenceHandler
-import com.compx551.rhythmrun.processing.processor.ProcessingRequest
-import com.compx551.rhythmrun.processing.processor.SpeedHeartRateRatio
+import com.compx551.rhythmrun.processing.model.ProcessedReading
+import com.compx551.rhythmrun.processing.model.ProcessingRequest
+import com.compx551.rhythmrun.processing.processor.NormalizingHandler
 import com.compx551.rhythmrun.processing.processor.ValidationHandler
-import com.compx551.rhythmrun.processing.repository.RunningStore
 
-/** Connects GPS processing and historical efficiency analysis to persistence in the chain. */
-class RhythmProcessor(
-    private val store: RunningStore,
-    private val analyzingHandler: AnalyzingHandler = AnalyzingHandler(),
-    private val gpsProcessingHandler: GpsProcessingHandler = GpsProcessingHandler(),
-) {
+/** Runs the processing workflow through validation and normalization only. */
+class RhythmProcessor {
+    private val recordedReadings = mutableListOf<ProcessedReading>()
+
+    /** All validated and normalized sensor snapshots, in processing order. */
+    val processedReadings: List<ProcessedReading>
+        get() = recordedReadings.toList()
+
     private val validationHandler = ValidationHandler()
+    private val normalizingHandler = NormalizingHandler(recordedReadings)
 
     init {
-        validationHandler
-            .setNext(gpsProcessingHandler)
-            .setNext(analyzingHandler)
-            .setNext(PersistenceHandler(store))
+        validationHandler.setNext(normalizingHandler)
     }
 
-    /**
-     * Processes optional raw GPS readings, then analyzes and stores the already-smoothed sensor
-     * readings. GPS output is returned through [ProcessingRequest.gpsResult].
-     */
-    suspend fun calculateAndStoreEfficiency(request: ProcessingRequest): List<SpeedHeartRateRatio> {
-        val session = requireNotNull(request.sessionDetails) { "Session details are required for persistence" }
-        require(session.sessionId == request.sessionId) { "Session IDs must match" }
-        request.efficiencyBaseline = analyzingHandler.calculateBaseline(
-            store.getHistoricalAverages(session.startTime),
-        )
+    /** Validates and normalizes one request, then returns all readings recorded so far. */
+    suspend fun rhythmProcessor(request: ProcessingRequest): List<ProcessedReading> {
         validationHandler.handle(request)
-        return request.speedHeartRateRatios
+        return processedReadings
     }
 }

@@ -6,22 +6,6 @@ class AnalyzingHandler(private val maxHeartRateAgeMillis: Long = 10_000L) : Proc
         require(maxHeartRateAgeMillis >= 0) { "Maximum HR age cannot be negative" }
     }
 
-    /** History is newest first. Use up to ten prior runs; return null when none are usable. */
-    fun calculateBaseline(historyNewestFirst: List<HistoricalRunAverage>): EfficiencyBaseline? {
-        val recent = historyNewestFirst.asSequence()
-            .take(10)
-            .filter { it.averageSpeedMetersPerSecond.isFinite() &&
-                it.averageSpeedMetersPerSecond > 0.0 &&
-                it.averageHeartRateBpm.isFinite() && it.averageHeartRateBpm > 0.0 }
-            .toList()
-        if (recent.isEmpty()) return null
-
-        val averageSpeed = recent.map { it.averageSpeedMetersPerSecond }.average()
-        val averageHeartRate = recent.map { it.averageHeartRateBpm }.average()
-        if (!averageSpeed.isFinite() || !averageHeartRate.isFinite()) return null
-        return EfficiencyBaseline(averageSpeed, averageHeartRate, recent.size)
-    }
-
     override fun process(request: ProcessingRequest): Boolean {
         val result = analyze(
             request.smoothedReadings,

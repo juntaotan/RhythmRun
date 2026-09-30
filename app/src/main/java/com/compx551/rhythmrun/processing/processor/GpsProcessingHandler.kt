@@ -18,15 +18,6 @@ class GpsProcessingHandler(
     private val maximumSpeedMetersPerSecond: Double = 25.0,
     private val smoothingWindowSize: Int = 3,
 ) : ProcessingHandler() {
-    init {
-        require(maximumAccuracyMeters > 0.0 && maximumAccuracyMeters.isFinite()) {
-            "Maximum GPS accuracy must be positive and finite"
-        }
-        require(maximumSpeedMetersPerSecond > 0.0 && maximumSpeedMetersPerSecond.isFinite()) {
-            "Maximum GPS speed must be positive and finite"
-        }
-        require(smoothingWindowSize > 0) { "GPS smoothing window size must be positive" }
-    }
 
     override fun process(request: ProcessingRequest): Boolean {
         val result = processLocations(

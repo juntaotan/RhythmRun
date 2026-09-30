@@ -1,46 +1,8 @@
 package com.compx551.rhythmrun.processing.processor
 
-import com.compx551.rhythmrun.processing.repository.RunningDetailsEntity
+typealias ProcessingRequest = com.compx551.rhythmrun.processing.model.ProcessingRequest
+typealias EfficiencyBaseline = com.compx551.rhythmrun.processing.model.EfficiencyBaseline
 
-/** Timestamps are milliseconds on the same session timeline. */
-data class ProcessingRequest(
-    val sessionId: String,
-    val readings: List<RawReading>,
-    /** Session metadata/summary supplied by the session owner for persistence. */
-    val sessionDetails: RunningDetailsEntity? = null,
-    /** Last persisted step count before this batch, when processing a continuing session. */
-    val previousStepCounter: RawReading.StepCounter? = null,
-    var normalizedReadings: List<NormalizedReading> = emptyList(),
-    var latestStepCounter: RawReading.StepCounter? = null,
-    /** Recent unsmoothed readings from the preceding batch of this session. */
-    val smoothingHistory: List<NormalizedReading> = emptyList(),
-    var smoothedReadings: List<NormalizedReading> = emptyList(),
-    var nextSmoothingHistory: List<NormalizedReading> = emptyList(),
-    /** Last smoothed HR from the preceding batch, for pairing with the next speed reading. */
-    val previousSmoothedHeartRate: NormalizedReading.HeartRate? = null,
-    var latestSmoothedHeartRate: NormalizedReading.HeartRate? = null,
-    /** GPS context produced by the preceding batch of this session. */
-    val gpsState: GpsProcessingState = GpsProcessingState(),
-    /** Accepted and smoothed route fixes, plus distance added by this batch. */
-    var gpsResult: GpsProcessingResult = GpsProcessingResult(),
-    var nextGpsState: GpsProcessingState = GpsProcessingState(),
-    /** Derived from completed sessions before this session; null when none exist. */
-    var efficiencyBaseline: EfficiencyBaseline? = null,
-    var speedHeartRateRatios: List<SpeedHeartRateRatio> = emptyList(),
-    /** Produced by AnalyzingHandler and consumed by PersistenceHandler. */
-    var analysisResult: AnalysisResult? = null,
-)
-
-data class EfficiencyBaseline(
-    val averageSpeedMetersPerSecond: Double,
-    val averageHeartRateBpm: Double,
-    val historyCount: Int,
-) {
-    val speedHeartRateRatio: Double
-        get() = averageSpeedMetersPerSecond / averageHeartRateBpm
-}
-
-/** Current ratio and its index relative to historical runs, when a baseline exists. */
 data class SpeedHeartRateRatio(
     val timestampMillis: Long,
     val speedToHeartRateRatio: Double,

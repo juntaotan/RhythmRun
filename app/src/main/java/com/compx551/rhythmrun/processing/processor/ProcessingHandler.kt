@@ -1,23 +1,7 @@
 package com.compx551.rhythmrun.processing.processor
 
-/**
- * Data Processing
- *
- * The processor receives heart rate, acceleration, velocity and cumulative step counts from the
- * watch. Cadence is derived from consecutive step-counter readings.
- *
- * Sensor readings are processed as follows:
- * - 1st. validate the data received from the watch in {@code ValidationHandler}
- * - 2nd. normalise the validated data in {@code NormalizingHandler}.
- * - 3rd. Smooth the normalised data using a moving average in {@code SmoothingHandler}.
- * - 4th. Calculate (Speed_t / HR_t) / (average historical speed / average historical HR), using
- *        up to the ten most recent completed runs. Leave the index absent with no history.
- *
- * Optional GPS readings follow their own route: accuracy filter, impossible-speed filter,
- * weighted moving average, then route-distance calculation in {@code GpsProcessingHandler}.
- * Processed results are then passed to persistence.
- *
- */
+import com.compx551.rhythmrun.processing.model.ProcessingRequest
+
 abstract class ProcessingHandler {
 
     private var next: ProcessingHandler? = null
