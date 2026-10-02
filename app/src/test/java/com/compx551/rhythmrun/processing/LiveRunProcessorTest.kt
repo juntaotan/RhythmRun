@@ -49,6 +49,7 @@ class LiveRunProcessorTest {
 
         val results = processor.processedReadings.value
         assertTrue("Processed readings should not be empty", results.isNotEmpty())
+        assertEquals("test-session", processor.currentSessionId)
 
         val latest = results.last()
         assertEquals(130.0, latest.heartRateBpm, 0.01)

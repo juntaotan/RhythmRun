@@ -257,6 +257,15 @@ class RhythmRunViewModel(
         }
 
         RhythmDataListenerService.readingListener = { reading ->
+            val live = runSessionState.liveRun
+            if (live.sessionId != reading.sessionId || live.syncStatus != LiveRunSyncStatus.ReceivingData) {
+                runSessionState = runSessionState.copy(
+                    liveRun = live.copy(
+                        sessionId = reading.sessionId,
+                        syncStatus = LiveRunSyncStatus.ReceivingData,
+                    ),
+                )
+            }
             processor.onReading(reading)
         }
     }
