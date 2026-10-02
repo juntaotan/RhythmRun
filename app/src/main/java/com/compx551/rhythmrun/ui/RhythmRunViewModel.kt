@@ -29,6 +29,7 @@ import com.compx551.rhythmrun.ui.runsession.RunSessionUiMode
 import com.compx551.rhythmrun.ui.runsession.RunSessionUiState
 import com.compx551.rhythmrun.ui.runsession.createInitialRunSessionUiState
 import com.compx551.rhythmrun.communication.RhythmDataListenerService
+import com.compx551.rhythmrun.communication.SessionCommandClient
 import com.compx551.rhythmrun.processing.LiveRunProcessor
 import com.compx551.rhythmrun.processing.model.ProcessedReading
 import java.util.Calendar
@@ -44,6 +45,7 @@ import kotlinx.coroutines.launch
 
 class RhythmRunViewModel(
     private val repository: RunRepository,
+    private val sessionCommandClient: SessionCommandClient? = null,
     private val nowMillis: () -> Long = System::currentTimeMillis,
     private val timeZone: TimeZone = TimeZone.getDefault(),
 ) : ViewModel() {
@@ -184,6 +186,7 @@ class RhythmRunViewModel(
             repository.createSession(createPlan(runSessionState, sessionId, startedAt))
             repository.updateSessionState(sessionId, RunSessionState.Active)
         }
+        sessionCommandClient?.sendStart(sessionId)
         startLiveProcessing()
     }
 
@@ -201,11 +204,19 @@ class RhythmRunViewModel(
                     state = if (paused) RunSessionState.Paused else RunSessionState.Active,
                 )
             }
+            if (paused) {
+                sessionCommandClient?.sendPause(sessionId)
+            } else {
+                sessionCommandClient?.sendResume(sessionId)
+            }
         }
     }
 
     fun finishRun() {
         stopLiveProcessing()
+        runSessionState.liveRun.sessionId?.let { sessionId ->
+            sessionCommandClient?.sendStop(sessionId)
+        }
         val record = createRunRecord(runSessionState)
         runSessionState = runSessionState.copy(
             mode = RunSessionUiMode.Summary,
@@ -373,16 +384,18 @@ class RhythmRunViewModel(
 
     class Factory(
         private val repository: RunRepository,
+        private val sessionCommandClient: SessionCommandClient? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             require(modelClass.isAssignableFrom(RhythmRunViewModel::class.java))
-            return RhythmRunViewModel(repository) as T
+            return RhythmRunViewModel(repository, sessionCommandClient) as T
         }
 
         companion object {
             fun production(context: Context): Factory = Factory(
-                RoomRunRepository(PhoneRoomDatabase.getInstance(context)),
+                repository = RoomRunRepository(PhoneRoomDatabase.getInstance(context)),
+                sessionCommandClient = SessionCommandClient(context),
             )
         }
     }
