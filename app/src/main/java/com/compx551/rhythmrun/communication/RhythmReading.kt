@@ -19,4 +19,7 @@ data class RhythmReading(
     val cadenceStepsPerMinute: Float? = null,
     val cadenceSource: String? = null,
     val cadenceConfidence: Float? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val accuracyMeters: Double? = null,
 )

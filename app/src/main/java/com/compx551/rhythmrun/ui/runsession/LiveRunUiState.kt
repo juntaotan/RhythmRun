@@ -1,6 +1,7 @@
 package com.compx551.rhythmrun.ui.runsession
 
 import com.compx551.rhythmrun.domain.model.RunStage
+import com.compx551.rhythmrun.processing.model.ProcessedLocation
 
 enum class LiveRunSyncStatus {
     WaitingForWatch,
@@ -26,6 +27,8 @@ data class LiveRunUiState(
     val distanceMetres: Double = 0.0,
     val accelerationMagnitude: Double? = null,
     val efficiency: Double? = null,
+    val routePoints: List<ProcessedLocation> = emptyList(),
+    val currentLocation: ProcessedLocation? = null,
 
     val isPaused: Boolean = false,
     val syncStatus: LiveRunSyncStatus =

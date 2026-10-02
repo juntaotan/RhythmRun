@@ -56,6 +56,14 @@ fun LiveRunContent(
         }
 
         item {
+            LiveRunMapCard(
+                routePoints = state.routePoints,
+                currentLocation = state.currentLocation,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        item {
             OutlinedCard(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.outlinedCardColors(

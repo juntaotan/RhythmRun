@@ -249,6 +249,18 @@ class RhythmRunViewModel(
         val speedKmh = reading.velocityMetersPerSecond * 3.6
         val hr = reading.heartRateBpm.roundToInt().takeIf { it > 0 }
 
+        val newLocation = reading.location?.takeIf { it.latitude != 0.0 || it.longitude != 0.0 }
+        val newRoute = if (newLocation != null) {
+            val lastPoint = currentLive.routePoints.lastOrNull()
+            if (lastPoint == null || lastPoint.latitude != newLocation.latitude || lastPoint.longitude != newLocation.longitude) {
+                currentLive.routePoints + newLocation
+            } else {
+                currentLive.routePoints
+            }
+        } else {
+            currentLive.routePoints
+        }
+
         runSessionState = runSessionState.copy(
             liveRun = currentLive.copy(
                 heartRateBpm = hr ?: currentLive.heartRateBpm,
@@ -256,6 +268,8 @@ class RhythmRunViewModel(
                 speedKilometresPerHour = if (speedKmh > 0) speedKmh else currentLive.speedKilometresPerHour,
                 accelerationMagnitude = reading.accelerationPerSecond.takeIf { it > 0.0 } ?: currentLive.accelerationMagnitude,
                 efficiency = reading.efficiency,
+                currentLocation = newLocation ?: currentLive.currentLocation,
+                routePoints = newRoute,
                 syncStatus = LiveRunSyncStatus.ReceivingData,
             ),
         )

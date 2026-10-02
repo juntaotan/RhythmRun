@@ -40,6 +40,9 @@ class RhythmDataListenerService : WearableListenerService() {
                     cadenceStepsPerMinute = map.getFloat(RhythmProtocol.CADENCE),
                     cadenceSource = map.getString(RhythmProtocol.CADENCE_SOURCE),
                     cadenceConfidence = map.getFloat(RhythmProtocol.CADENCE_CONFIDENCE),
+                    latitude = if (map.containsKey(RhythmProtocol.LATITUDE)) map.getDouble(RhythmProtocol.LATITUDE) else null,
+                    longitude = if (map.containsKey(RhythmProtocol.LONGITUDE)) map.getDouble(RhythmProtocol.LONGITUDE) else null,
+                    accuracyMeters = if (map.containsKey(RhythmProtocol.ACCURACY)) map.getDouble(RhythmProtocol.ACCURACY) else null,
                 )
 
                 val recordKey = "${reading.sessionId}:${reading.dataType}:${reading.sequence}"

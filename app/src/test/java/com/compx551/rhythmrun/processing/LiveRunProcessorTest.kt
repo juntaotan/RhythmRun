@@ -58,4 +58,29 @@ class LiveRunProcessorTest {
         assertNotNull("Efficiency should be calculated", latest.efficiency)
         assertTrue("Efficiency should be greater than 0", latest.efficiency!! > 0.0)
     }
+
+    @Test
+    fun onReading_withLocation_producesProcessedLocation() {
+        val processor = LiveRunProcessor()
+
+        val locationReading = RhythmReading(
+            dataType = "location",
+            sessionId = "test-session",
+            sequence = 1L,
+            timestamp = 1_000L,
+            latitude = -36.8509,
+            longitude = 174.7645,
+            accuracyMeters = 5.0,
+        )
+
+        processor.onReading(locationReading)
+
+        val results = processor.processedReadings.value
+        assertTrue("Processed readings should not be empty", results.isNotEmpty())
+
+        val latest = results.last()
+        assertNotNull("Location should be present", latest.location)
+        assertEquals(-36.8509, latest.location!!.latitude, 0.001)
+        assertEquals(174.7645, latest.location!!.longitude, 0.001)
+    }
 }

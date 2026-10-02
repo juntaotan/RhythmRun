@@ -29,6 +29,9 @@ object RhythmProtocol {
     const val CADENCE = "steps_per_minute"
     const val CADENCE_SOURCE = "cadence_source"
     const val CADENCE_CONFIDENCE = "cadence_confidence"
+    const val LATITUDE = "latitude"
+    const val LONGITUDE = "longitude"
+    const val ACCURACY = "accuracy"
 
     fun dataType(path: String?): String? = when {
         path?.startsWith(ACCEL_PATH_PREFIX) == true -> "accel"

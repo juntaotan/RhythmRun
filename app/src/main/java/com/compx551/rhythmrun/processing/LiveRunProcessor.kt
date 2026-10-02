@@ -24,6 +24,8 @@ class LiveRunProcessor(
     private var latestHr: Double? = null
     private var latestAccel: Triple<Double, Double, Double>? = null
     private var latestCadenceSpm: Float? = null
+    private var latestLocation: Pair<Double, Double>? = null
+    private var latestAccuracy: Double? = null
 
     fun onReading(reading: RhythmReading) {
         val ts = reading.timestamp
@@ -36,6 +38,10 @@ class LiveRunProcessor(
             )
         }
         reading.cadenceStepsPerMinute?.let { if (it > 0f) latestCadenceSpm = it }
+        if (reading.latitude != null && reading.longitude != null) {
+            latestLocation = reading.latitude to reading.longitude
+            latestAccuracy = reading.accuracyMeters
+        }
 
         val readings = buildList {
             latestHr?.let { add(RawReading.HeartRate(ts, it)) }
@@ -44,6 +50,9 @@ class LiveRunProcessor(
                 val sps = (spm / 60.0).roundToLong().coerceAtLeast(1L)
                 add(RawReading.StepCounter(ts, sps))
                 add(RawReading.Velocity(ts, (spm / 60.0) * DEFAULT_STRIDE_LENGTH_METERS))
+            }
+            latestLocation?.let { (lat, lon) ->
+                add(RawReading.Location(ts, lat, lon, latestAccuracy ?: 0.0))
             }
         }
 
