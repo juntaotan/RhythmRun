@@ -3,6 +3,7 @@ package com.compx551.rhythmrun.ui.runsession
 import com.compx551.rhythmrun.domain.model.CadenceSource
 import com.compx551.rhythmrun.domain.model.RunCompletion
 import com.compx551.rhythmrun.domain.model.RunStage
+import com.compx551.rhythmrun.processing.model.ProcessedLocation
 
 data class StageSummaryUiState(
     val stage: RunStage,
@@ -37,6 +38,7 @@ data class RunSummaryUiState(
     val stages: List<StageSummaryUiState>,
 
     val incompleteDataMessages: List<String> = emptyList(),
+    val routePoints: List<ProcessedLocation> = emptyList(),
 ) {
     val hasIncompleteData: Boolean
         get() {

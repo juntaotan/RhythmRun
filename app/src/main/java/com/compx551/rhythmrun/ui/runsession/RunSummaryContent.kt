@@ -58,6 +58,19 @@ fun RunSummaryContent(
         }
 
         item {
+            LiveRunMapCard(
+                routePoints = state.routePoints,
+                isLive = false,
+                customTitle = if (state.routePoints.isNotEmpty()) {
+                    "COMPLETED ROUTE · ${state.routePoints.size} PTS"
+                } else {
+                    "NO GPS ROUTE RECORDED"
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),

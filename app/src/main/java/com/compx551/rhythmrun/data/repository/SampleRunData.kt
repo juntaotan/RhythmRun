@@ -111,4 +111,34 @@ object SampleRunData {
             ),
         )
     }
+
+    fun createSampleLocationFixes(
+        sessionId: String,
+        startEpochMillis: Long,
+    ): List<com.compx551.rhythmrun.domain.model.LocationFixRecord> {
+        val baseLat = -37.7870
+        val baseLon = 175.3163
+        val deltas = listOf(
+            0.0000 to 0.0000,
+            0.0012 to 0.0008,
+            0.0025 to 0.0022,
+            0.0031 to 0.0041,
+            0.0022 to 0.0055,
+            0.0008 to 0.0060,
+            -0.0005 to 0.0048,
+            -0.0010 to 0.0028,
+            -0.0002 to 0.0005,
+        )
+        return deltas.mapIndexed { idx, (dLat, dLon) ->
+            com.compx551.rhythmrun.domain.model.LocationFixRecord(
+                sessionId = sessionId,
+                sequence = idx.toLong(),
+                timestampEpochMillis = startEpochMillis + idx * 30_000L,
+                latitude = baseLat + dLat,
+                longitude = baseLon + dLon,
+                accuracyMetres = 4.5,
+                available = true,
+            )
+        }
+    }
 }

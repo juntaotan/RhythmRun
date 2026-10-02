@@ -12,12 +12,15 @@ import com.compx551.rhythmrun.data.repository.RoomRunRepository
 import com.compx551.rhythmrun.domain.model.CadenceSource
 import com.compx551.rhythmrun.domain.model.RunCompletion
 import com.compx551.rhythmrun.domain.model.RunRecord
+import com.compx551.rhythmrun.domain.model.LocationFixRecord
+import com.compx551.rhythmrun.domain.model.RunDataBatch
 import com.compx551.rhythmrun.domain.model.RunPlan
 import com.compx551.rhythmrun.domain.model.RunPlanStage
 import com.compx551.rhythmrun.domain.model.RunSessionState
 import com.compx551.rhythmrun.domain.model.RunStage
 import com.compx551.rhythmrun.domain.model.RunStageResult
 import com.compx551.rhythmrun.domain.repository.RunRepository
+import com.compx551.rhythmrun.processing.model.ProcessedLocation
 import com.compx551.rhythmrun.ui.dashboard.DashboardUiState
 import com.compx551.rhythmrun.ui.history.HistoryUiState
 import com.compx551.rhythmrun.ui.mapping.buildDashboardUiState
@@ -218,12 +221,27 @@ class RhythmRunViewModel(
             sessionCommandClient?.sendStop(sessionId)
         }
         val record = createRunRecord(runSessionState)
+        val route = runSessionState.liveRun.routePoints
         runSessionState = runSessionState.copy(
             mode = RunSessionUiMode.Summary,
-            summary = record.toSummaryUiState(),
+            summary = record.toSummaryUiState(routePoints = route),
         )
         viewModelScope.launch {
             repository.upsert(record)
+            if (route.isNotEmpty()) {
+                val fixes = route.mapIndexed { index, loc ->
+                    LocationFixRecord(
+                        sessionId = record.sessionId,
+                        sequence = index.toLong(),
+                        timestampEpochMillis = record.startEpochMillis + index * 1000L,
+                        latitude = loc.latitude,
+                        longitude = loc.longitude,
+                        accuracyMetres = loc.accuracyMeters,
+                        available = true,
+                    )
+                }
+                repository.persistBatch(RunDataBatch(locationFixes = fixes))
+            }
         }
     }
 
@@ -288,9 +306,15 @@ class RhythmRunViewModel(
     fun openSummary(sessionId: String, onOpened: () -> Unit) {
         viewModelScope.launch {
             val record = repository.findById(sessionId) ?: return@launch
+            val fixes = repository.locationFixes(sessionId)
+            val route = fixes.mapNotNull { fix ->
+                if (fix.latitude != null && fix.longitude != null) {
+                    ProcessedLocation(fix.latitude, fix.longitude, fix.accuracyMetres ?: 0.0)
+                } else null
+            }
             runSessionState = runSessionState.copy(
                 mode = RunSessionUiMode.Summary,
-                summary = record.toSummaryUiState(),
+                summary = record.toSummaryUiState(routePoints = route),
             )
             onOpened()
         }
