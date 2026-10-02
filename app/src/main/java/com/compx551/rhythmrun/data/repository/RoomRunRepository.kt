@@ -32,12 +32,19 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 class RoomRunRepository(
     database: PhoneRoomDatabase,
     scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) : RunRepository {
     private val dao = database.phoneRunDao()
+
+    init {
+        scope.launch {
+            SampleRunData.createSampleRecords().forEach { upsert(it) }
+        }
+    }
 
     override val records: StateFlow<List<RunRecord>> = dao.observeSessions()
         .map { sessions ->
