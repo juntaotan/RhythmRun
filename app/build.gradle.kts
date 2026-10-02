@@ -57,6 +57,8 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.core.ktx)
     implementation(libs.material)
+    implementation(libs.play.services.wearable)
+    implementation(libs.osmdroid.android)
 
     ksp(libs.androidx.room3.compiler)
     testImplementation(libs.junit)

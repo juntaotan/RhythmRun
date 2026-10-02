@@ -51,6 +51,16 @@ class WatchDataSender(context: Context) {
         }
     }
 
+    fun sendLocation(sessionId: String, sequence: Long, batchIndex: Long = sequence,
+        timestamp: Long, latitude: Double, longitude: Double, accuracy: Double?) {
+        put(RhythmProtocol.LOCATION_PATH_PREFIX, sessionId, batchIndex) {
+            putCommon(sessionId, sequence, timestamp)
+            putDouble(RhythmProtocol.LATITUDE, latitude)
+            putDouble(RhythmProtocol.LONGITUDE, longitude)
+            accuracy?.let { putDouble(RhythmProtocol.ACCURACY, it) }
+        }
+    }
+
     /** Compatibility helper: emits the three sensor types as independent records. */
     fun sendSample(
         sessionId: String,

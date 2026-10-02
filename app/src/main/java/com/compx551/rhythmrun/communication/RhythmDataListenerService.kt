@@ -40,6 +40,9 @@ class RhythmDataListenerService : WearableListenerService() {
                     cadenceStepsPerMinute = map.getFloat(RhythmProtocol.CADENCE),
                     cadenceSource = map.getString(RhythmProtocol.CADENCE_SOURCE),
                     cadenceConfidence = map.getFloat(RhythmProtocol.CADENCE_CONFIDENCE),
+                    latitude = if (map.containsKey(RhythmProtocol.LATITUDE)) map.getDouble(RhythmProtocol.LATITUDE) else null,
+                    longitude = if (map.containsKey(RhythmProtocol.LONGITUDE)) map.getDouble(RhythmProtocol.LONGITUDE) else null,
+                    accuracyMeters = if (map.containsKey(RhythmProtocol.ACCURACY)) map.getDouble(RhythmProtocol.ACCURACY) else null,
                 )
 
                 val recordKey = "${reading.sessionId}:${reading.dataType}:${reading.sequence}"
@@ -53,6 +56,8 @@ class RhythmDataListenerService : WearableListenerService() {
                     reading.sequence,
                     previousSequence ?: reading.sequence,
                 )
+
+                readingListener?.invoke(reading)
 
                 // Temporary hand-off for Member 4. Replace this broadcast with the Room repository call.
                 sendBroadcast(Intent(ACTION_SAMPLE_RECEIVED).apply {
@@ -80,6 +85,8 @@ class RhythmDataListenerService : WearableListenerService() {
     }
 
     companion object {
+        var readingListener: ((RhythmReading) -> Unit)? = null
+
         const val ACTION_SAMPLE_RECEIVED = "com.compx551.rhythmrun.SAMPLE_RECEIVED"
         const val EXTRA_SESSION_ID = "session_id"
         const val EXTRA_DATA_TYPE = "data_type"

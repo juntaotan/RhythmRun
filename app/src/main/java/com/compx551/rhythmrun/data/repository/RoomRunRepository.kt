@@ -30,14 +30,36 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 class RoomRunRepository(
     database: PhoneRoomDatabase,
     scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) : RunRepository {
     private val dao = database.phoneRunDao()
+
+    init {
+        scope.launch {
+            val sessions = dao.observeSessions().first()
+            if (sessions.isEmpty()) {
+                SampleRunData.createSampleRecords().forEach { session ->
+                    upsert(session)
+                    val sampleFixes = SampleRunData.createSampleLocationFixes(session.sessionId, session.startEpochMillis)
+                    persistBatch(RunDataBatch(locationFixes = sampleFixes))
+                }
+            } else {
+                sessions.filter { it.sessionId.startsWith("sample-session-") }.forEach { session ->
+                    if (dao.findLocationFixes(session.sessionId).isEmpty()) {
+                        val sampleFixes = SampleRunData.createSampleLocationFixes(session.sessionId, session.startEpochMillis)
+                        persistBatch(RunDataBatch(locationFixes = sampleFixes))
+                    }
+                }
+            }
+        }
+    }
 
     override val records: StateFlow<List<RunRecord>> = dao.observeSessions()
         .map { sessions ->

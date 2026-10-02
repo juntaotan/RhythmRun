@@ -56,6 +56,14 @@ fun LiveRunContent(
         }
 
         item {
+            LiveRunMapCard(
+                routePoints = state.routePoints,
+                currentLocation = state.currentLocation,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        item {
             OutlinedCard(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.outlinedCardColors(
@@ -197,6 +205,9 @@ fun LiveRunContent(
                     value = state.speedKilometresPerHour
                         ?.let(::formatOneDecimal) ?: "--",
                     unit = "km/h",
+                    supportingText = state.efficiency?.let {
+                        "Efficiency ${formatOneDecimal(it)}x"
+                    },
                     modifier = Modifier.weight(1f),
                 )
 

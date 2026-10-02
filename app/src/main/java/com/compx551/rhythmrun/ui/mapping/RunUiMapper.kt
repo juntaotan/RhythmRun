@@ -17,7 +17,11 @@ import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
 
-fun RunRecord.toSummaryUiState(): RunSummaryUiState = RunSummaryUiState(
+import com.compx551.rhythmrun.processing.model.ProcessedLocation
+
+fun RunRecord.toSummaryUiState(
+    routePoints: List<ProcessedLocation> = emptyList(),
+): RunSummaryUiState = RunSummaryUiState(
     sessionId = sessionId,
     completionStatus = completion,
     totalDurationSeconds = totalDurationSeconds,
@@ -43,6 +47,7 @@ fun RunRecord.toSummaryUiState(): RunSummaryUiState = RunSummaryUiState(
         )
     },
     incompleteDataMessages = incompleteDataMessages,
+    routePoints = routePoints,
 )
 
 fun RunRecord.toHistorySessionUiModel(): HistorySessionUiModel {

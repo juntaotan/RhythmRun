@@ -12,12 +12,15 @@ import com.compx551.rhythmrun.data.repository.RoomRunRepository
 import com.compx551.rhythmrun.domain.model.CadenceSource
 import com.compx551.rhythmrun.domain.model.RunCompletion
 import com.compx551.rhythmrun.domain.model.RunRecord
+import com.compx551.rhythmrun.domain.model.LocationFixRecord
+import com.compx551.rhythmrun.domain.model.RunDataBatch
 import com.compx551.rhythmrun.domain.model.RunPlan
 import com.compx551.rhythmrun.domain.model.RunPlanStage
 import com.compx551.rhythmrun.domain.model.RunSessionState
 import com.compx551.rhythmrun.domain.model.RunStage
 import com.compx551.rhythmrun.domain.model.RunStageResult
 import com.compx551.rhythmrun.domain.repository.RunRepository
+import com.compx551.rhythmrun.processing.model.ProcessedLocation
 import com.compx551.rhythmrun.ui.dashboard.DashboardUiState
 import com.compx551.rhythmrun.ui.history.HistoryUiState
 import com.compx551.rhythmrun.ui.mapping.buildDashboardUiState
@@ -28,9 +31,14 @@ import com.compx551.rhythmrun.ui.runsession.LiveRunUiState
 import com.compx551.rhythmrun.ui.runsession.RunSessionUiMode
 import com.compx551.rhythmrun.ui.runsession.RunSessionUiState
 import com.compx551.rhythmrun.ui.runsession.createInitialRunSessionUiState
+import com.compx551.rhythmrun.communication.RhythmDataListenerService
+import com.compx551.rhythmrun.communication.SessionCommandClient
+import com.compx551.rhythmrun.processing.LiveRunProcessor
+import com.compx551.rhythmrun.processing.model.ProcessedReading
 import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
+import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -40,9 +48,11 @@ import kotlinx.coroutines.launch
 
 class RhythmRunViewModel(
     private val repository: RunRepository,
+    private val sessionCommandClient: SessionCommandClient? = null,
     private val nowMillis: () -> Long = System::currentTimeMillis,
     private val timeZone: TimeZone = TimeZone.getDefault(),
 ) : ViewModel() {
+    private var liveRunProcessor: LiveRunProcessor? = null
     private var activeRunStartedAtMillis: Long? = null
     private val initialCalendar = Calendar.getInstance(timeZone)
     private val selectedMonth = MutableStateFlow(
@@ -122,6 +132,7 @@ class RhythmRunViewModel(
                 syncStatus = LiveRunSyncStatus.WaitingForWatch,
             ),
         )
+        startLiveProcessing()
     }
 
     fun updateDuration(stage: RunStage, value: String) {
@@ -178,6 +189,8 @@ class RhythmRunViewModel(
             repository.createSession(createPlan(runSessionState, sessionId, startedAt))
             repository.updateSessionState(sessionId, RunSessionState.Active)
         }
+        sessionCommandClient?.sendStart(sessionId)
+        startLiveProcessing()
     }
 
     fun togglePause() {
@@ -194,26 +207,114 @@ class RhythmRunViewModel(
                     state = if (paused) RunSessionState.Paused else RunSessionState.Active,
                 )
             }
+            if (paused) {
+                sessionCommandClient?.sendPause(sessionId)
+            } else {
+                sessionCommandClient?.sendResume(sessionId)
+            }
         }
     }
 
     fun finishRun() {
+        stopLiveProcessing()
+        runSessionState.liveRun.sessionId?.let { sessionId ->
+            sessionCommandClient?.sendStop(sessionId)
+        }
         val record = createRunRecord(runSessionState)
+        val route = runSessionState.liveRun.routePoints
         runSessionState = runSessionState.copy(
             mode = RunSessionUiMode.Summary,
-            summary = record.toSummaryUiState(),
+            summary = record.toSummaryUiState(routePoints = route),
         )
         viewModelScope.launch {
             repository.upsert(record)
+            if (route.isNotEmpty()) {
+                val fixes = route.mapIndexed { index, loc ->
+                    LocationFixRecord(
+                        sessionId = record.sessionId,
+                        sequence = index.toLong(),
+                        timestampEpochMillis = record.startEpochMillis + index * 1000L,
+                        latitude = loc.latitude,
+                        longitude = loc.longitude,
+                        accuracyMetres = loc.accuracyMeters,
+                        available = true,
+                    )
+                }
+                repository.persistBatch(RunDataBatch(locationFixes = fixes))
+            }
         }
+    }
+
+    private fun startLiveProcessing() {
+        stopLiveProcessing()
+        val processor = LiveRunProcessor()
+        liveRunProcessor = processor
+
+        viewModelScope.launch {
+            processor.processedReadings.collect { readings ->
+                readings.lastOrNull()?.let(::updateLiveMetrics)
+            }
+        }
+
+        RhythmDataListenerService.readingListener = { reading ->
+            processor.onReading(reading)
+        }
+    }
+
+    private fun updateLiveMetrics(reading: ProcessedReading) {
+        val currentLive = runSessionState.liveRun
+        val cadence = (reading.stepCounterPerSecond * 60.0).roundToInt()
+        val speedKmh = reading.velocityMetersPerSecond * 3.6
+        val hr = reading.heartRateBpm.roundToInt().takeIf { it > 0 }
+
+        val newLocation = reading.location?.takeIf { it.latitude != 0.0 || it.longitude != 0.0 }
+        val newRoute = if (newLocation != null) {
+            val lastPoint = currentLive.routePoints.lastOrNull()
+            if (lastPoint == null || lastPoint.latitude != newLocation.latitude || lastPoint.longitude != newLocation.longitude) {
+                currentLive.routePoints + newLocation
+            } else {
+                currentLive.routePoints
+            }
+        } else {
+            currentLive.routePoints
+        }
+
+        runSessionState = runSessionState.copy(
+            liveRun = currentLive.copy(
+                heartRateBpm = hr ?: currentLive.heartRateBpm,
+                cadenceSpm = if (cadence > 0) cadence else currentLive.cadenceSpm,
+                speedKilometresPerHour = if (speedKmh > 0) speedKmh else currentLive.speedKilometresPerHour,
+                accelerationMagnitude = reading.accelerationPerSecond.takeIf { it > 0.0 } ?: currentLive.accelerationMagnitude,
+                efficiency = reading.efficiency,
+                currentLocation = newLocation ?: currentLive.currentLocation,
+                routePoints = newRoute,
+                syncStatus = LiveRunSyncStatus.ReceivingData,
+            ),
+        )
+    }
+
+    private fun stopLiveProcessing() {
+        RhythmDataListenerService.readingListener = null
+        liveRunProcessor = null
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        stopLiveProcessing()
     }
 
     fun openSummary(sessionId: String, onOpened: () -> Unit) {
         viewModelScope.launch {
             val record = repository.findById(sessionId) ?: return@launch
+            val fixes = repository.locationFixes(sessionId)
+            val route = fixes.mapNotNull { fix ->
+                if (fix.latitude != null && fix.longitude != null) {
+                    ProcessedLocation(fix.latitude, fix.longitude, fix.accuracyMetres ?: 0.0)
+                } else null
+            }
             runSessionState = runSessionState.copy(
                 mode = RunSessionUiMode.Summary,
-                summary = record.toSummaryUiState(),
+                summary = record.toSummaryUiState(routePoints = route),
             )
             onOpened()
         }
@@ -321,16 +422,18 @@ class RhythmRunViewModel(
 
     class Factory(
         private val repository: RunRepository,
+        private val sessionCommandClient: SessionCommandClient? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             require(modelClass.isAssignableFrom(RhythmRunViewModel::class.java))
-            return RhythmRunViewModel(repository) as T
+            return RhythmRunViewModel(repository, sessionCommandClient) as T
         }
 
         companion object {
             fun production(context: Context): Factory = Factory(
-                RoomRunRepository(PhoneRoomDatabase.getInstance(context)),
+                repository = RoomRunRepository(PhoneRoomDatabase.getInstance(context)),
+                sessionCommandClient = SessionCommandClient(context),
             )
         }
     }
