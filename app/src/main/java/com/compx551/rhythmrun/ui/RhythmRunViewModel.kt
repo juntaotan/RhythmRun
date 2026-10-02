@@ -28,9 +28,13 @@ import com.compx551.rhythmrun.ui.runsession.LiveRunUiState
 import com.compx551.rhythmrun.ui.runsession.RunSessionUiMode
 import com.compx551.rhythmrun.ui.runsession.RunSessionUiState
 import com.compx551.rhythmrun.ui.runsession.createInitialRunSessionUiState
+import com.compx551.rhythmrun.communication.RhythmDataListenerService
+import com.compx551.rhythmrun.processing.LiveRunProcessor
+import com.compx551.rhythmrun.processing.model.ProcessedReading
 import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
+import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -43,6 +47,7 @@ class RhythmRunViewModel(
     private val nowMillis: () -> Long = System::currentTimeMillis,
     private val timeZone: TimeZone = TimeZone.getDefault(),
 ) : ViewModel() {
+    private var liveRunProcessor: LiveRunProcessor? = null
     private var activeRunStartedAtMillis: Long? = null
     private val initialCalendar = Calendar.getInstance(timeZone)
     private val selectedMonth = MutableStateFlow(
@@ -122,6 +127,7 @@ class RhythmRunViewModel(
                 syncStatus = LiveRunSyncStatus.WaitingForWatch,
             ),
         )
+        startLiveProcessing()
     }
 
     fun updateDuration(stage: RunStage, value: String) {
@@ -178,6 +184,7 @@ class RhythmRunViewModel(
             repository.createSession(createPlan(runSessionState, sessionId, startedAt))
             repository.updateSessionState(sessionId, RunSessionState.Active)
         }
+        startLiveProcessing()
     }
 
     fun togglePause() {
@@ -198,6 +205,7 @@ class RhythmRunViewModel(
     }
 
     fun finishRun() {
+        stopLiveProcessing()
         val record = createRunRecord(runSessionState)
         runSessionState = runSessionState.copy(
             mode = RunSessionUiMode.Summary,
@@ -206,6 +214,50 @@ class RhythmRunViewModel(
         viewModelScope.launch {
             repository.upsert(record)
         }
+    }
+
+    private fun startLiveProcessing() {
+        stopLiveProcessing()
+        val processor = LiveRunProcessor()
+        liveRunProcessor = processor
+
+        viewModelScope.launch {
+            processor.processedReadings.collect { readings ->
+                readings.lastOrNull()?.let(::updateLiveMetrics)
+            }
+        }
+
+        RhythmDataListenerService.readingListener = { reading ->
+            processor.onReading(reading)
+        }
+    }
+
+    private fun updateLiveMetrics(reading: ProcessedReading) {
+        val currentLive = runSessionState.liveRun
+        val cadence = (reading.stepCounterPerSecond * 60.0).roundToInt()
+        val speedKmh = reading.velocityMetersPerSecond * 3.6
+        val hr = reading.heartRateBpm.roundToInt().takeIf { it > 0 }
+
+        runSessionState = runSessionState.copy(
+            liveRun = currentLive.copy(
+                heartRateBpm = hr ?: currentLive.heartRateBpm,
+                cadenceSpm = if (cadence > 0) cadence else currentLive.cadenceSpm,
+                speedKilometresPerHour = if (speedKmh > 0) speedKmh else currentLive.speedKilometresPerHour,
+                accelerationMagnitude = reading.accelerationPerSecond.takeIf { it > 0.0 } ?: currentLive.accelerationMagnitude,
+                efficiency = reading.efficiency,
+                syncStatus = LiveRunSyncStatus.ReceivingData,
+            ),
+        )
+    }
+
+    private fun stopLiveProcessing() {
+        RhythmDataListenerService.readingListener = null
+        liveRunProcessor = null
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        stopLiveProcessing()
     }
 
     fun openSummary(sessionId: String, onOpened: () -> Unit) {

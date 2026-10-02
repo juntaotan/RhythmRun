@@ -25,6 +25,7 @@ data class LiveRunUiState(
     val speedKilometresPerHour: Double? = null,
     val distanceMetres: Double = 0.0,
     val accelerationMagnitude: Double? = null,
+    val efficiency: Double? = null,
 
     val isPaused: Boolean = false,
     val syncStatus: LiveRunSyncStatus =
@@ -52,5 +53,14 @@ data class LiveRunUiState(
             val targetCadence = targetCadenceSpm ?: return null
 
             return currentCadence - targetCadence
+        }
+
+    val efficiencySupportingText: String?
+        get() = efficiency?.let {
+            when {
+                it >= 1.05 -> "+${((it - 1.0) * 100).toInt()}% (Optimal)"
+                it <= 0.95 -> "${((it - 1.0) * 100).toInt()}% (Fatigue)"
+                else -> "Normal vs baseline"
+            }
         }
 }

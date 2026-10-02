@@ -54,6 +54,8 @@ class RhythmDataListenerService : WearableListenerService() {
                     previousSequence ?: reading.sequence,
                 )
 
+                readingListener?.invoke(reading)
+
                 // Temporary hand-off for Member 4. Replace this broadcast with the Room repository call.
                 sendBroadcast(Intent(ACTION_SAMPLE_RECEIVED).apply {
                     putExtra(EXTRA_DATA_TYPE, reading.dataType)
@@ -80,6 +82,8 @@ class RhythmDataListenerService : WearableListenerService() {
     }
 
     companion object {
+        var readingListener: ((RhythmReading) -> Unit)? = null
+
         const val ACTION_SAMPLE_RECEIVED = "com.compx551.rhythmrun.SAMPLE_RECEIVED"
         const val EXTRA_SESSION_ID = "session_id"
         const val EXTRA_DATA_TYPE = "data_type"

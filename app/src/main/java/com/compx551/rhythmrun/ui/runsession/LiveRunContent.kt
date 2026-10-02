@@ -197,6 +197,9 @@ fun LiveRunContent(
                     value = state.speedKilometresPerHour
                         ?.let(::formatOneDecimal) ?: "--",
                     unit = "km/h",
+                    supportingText = state.efficiency?.let {
+                        "Efficiency ${formatOneDecimal(it)}x"
+                    },
                     modifier = Modifier.weight(1f),
                 )
 
