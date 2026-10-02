@@ -21,6 +21,9 @@ class LiveRunProcessor(
     val processor = RhythmProcessor()
     val processedReadings: StateFlow<List<ProcessedReading>> = processor.processedReadings
 
+    var currentSessionId: String? = null
+        private set
+
     private var latestHr: Double? = null
     private var latestAccel: Triple<Double, Double, Double>? = null
     private var latestCadenceSpm: Float? = null
@@ -28,6 +31,14 @@ class LiveRunProcessor(
     private var latestAccuracy: Double? = null
 
     fun onReading(reading: RhythmReading) {
+        if (currentSessionId != reading.sessionId) {
+            currentSessionId = reading.sessionId
+            latestHr = null
+            latestAccel = null
+            latestCadenceSpm = null
+            latestLocation = null
+            latestAccuracy = null
+        }
         val ts = reading.timestamp
         reading.heartRateBpm?.let { if (it > 0f) latestHr = it.toDouble() }
         if (reading.accelerationX != null && reading.accelerationY != null && reading.accelerationZ != null) {
