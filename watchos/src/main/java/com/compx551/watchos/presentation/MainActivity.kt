@@ -28,6 +28,7 @@ import androidx.wear.compose.material3.lazy.transformedHeight
 import androidx.wear.compose.ui.tooling.preview.WearPreviewDevices
 import com.compx551.watchos.presentation.theme.RhythmRunTheme
 import com.compx551.watchos.permissions.HeartRatePermission
+import com.compx551.watchos.communication.WatchDataSender
 import com.compx551.watchos.sensors.CapturePhase
 import com.compx551.watchos.sensors.SensorCaptureManager
 import com.compx551.watchos.sensors.SensorCaptureState
@@ -53,7 +54,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val temporaryStorage = TemporarySessionStorage(this)
-        sensorCaptureManager = SensorCaptureManager(this, temporaryStorage) { captureState = it }
+        val watchDataSender = WatchDataSender(this)
+        sensorCaptureManager =
+            SensorCaptureManager(this, temporaryStorage, watchDataSender) { captureState = it }
         setContent {
             WearApp(
                 state = captureState,

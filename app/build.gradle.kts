@@ -46,6 +46,7 @@ dependencies {
     implementation(libs.androidx.room3.runtime)
     implementation(libs.androidx.sqlite.framework)
     implementation(libs.material)
+    implementation(libs.play.services.wearable)
     ksp(libs.androidx.room3.compiler)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.espresso.core)

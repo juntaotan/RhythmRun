@@ -10,6 +10,20 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.RhythmRun" />
+        android:theme="@style/Theme.RhythmRun">
+
+        <service
+            android:name=".communication.RhythmDataListenerService"
+            android:exported="true"
+            tools:ignore="ExportedService">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <data
+                    android:host="*"
+                    android:pathPrefix="/rhythmrun/v1/"
+                    android:scheme="wear" />
+            </intent-filter>
+        </service>
+    </application>
 
 </manifest>
