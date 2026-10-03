@@ -14,6 +14,7 @@ data class RhythmReading(
     val gyroscopeZ: Float? = null,
     val heartRateBpm: Float? = null,
     val heartRateAvailable: Boolean = false,
+    val heartRateSource: String? = null,
     val stepCount: Long? = null,
     val stepSource: String? = null,
     val cadenceStepsPerMinute: Float? = null,

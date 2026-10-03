@@ -1,17 +1,18 @@
 package com.compx551.watchos.communication
 
-/** Shared wire-level names for the watch and phone communication contract. */
+/** Shared wire-level names for watch-to-phone communication. */
 object RhythmProtocol {
-    const val ACCEL_PATH_PREFIX = "/rhythmrun/v1/accel/"
-    const val GYRO_PATH_PREFIX = "/rhythmrun/v1/gyro/"
-    const val HEART_RATE_PATH_PREFIX = "/rhythmrun/v1/hr/"
-    const val STEPS_PATH_PREFIX = "/rhythmrun/v1/steps/"
-    const val CADENCE_PATH_PREFIX = "/rhythmrun/v1/cadence/"
-    const val LOCATION_PATH_PREFIX = "/rhythmrun/v1/location/"
-    const val SESSION_START_PATH = "/rhythmrun/v1/session/start"
-    const val SESSION_PAUSE_PATH = "/rhythmrun/v1/session/pause"
-    const val SESSION_RESUME_PATH = "/rhythmrun/v1/session/resume"
-    const val SESSION_STOP_PATH = "/rhythmrun/v1/session/stop"
+    const val ROOT_PATH = "/rhythmrun/v1/"
+    const val ACCEL_PATH_PREFIX = "${ROOT_PATH}accel/"
+    const val GYRO_PATH_PREFIX = "${ROOT_PATH}gyro/"
+    const val HEART_RATE_PATH_PREFIX = "${ROOT_PATH}hr/"
+    const val STEPS_PATH_PREFIX = "${ROOT_PATH}steps/"
+    const val CADENCE_PATH_PREFIX = "${ROOT_PATH}cadence/"
+    const val LOCATION_PATH_PREFIX = "${ROOT_PATH}location/"
+    const val SESSION_START_PATH = "${ROOT_PATH}session/start"
+    const val SESSION_PAUSE_PATH = "${ROOT_PATH}session/pause"
+    const val SESSION_RESUME_PATH = "${ROOT_PATH}session/resume"
+    const val SESSION_STOP_PATH = "${ROOT_PATH}session/stop"
 
     const val SESSION_ID = "session_id"
     const val TIMESTAMP = "timestamp"
@@ -24,6 +25,7 @@ object RhythmProtocol {
     const val GYRO_Z = "gyroscope_z"
     const val HEART_RATE = "heart_rate_bpm"
     const val HEART_RATE_AVAILABLE = "heart_rate_available"
+    const val HEART_RATE_SOURCE = "heart_rate_source"
     const val STEP_COUNT = "step_count"
     const val STEP_SOURCE = "step_source"
     const val CADENCE = "steps_per_minute"
@@ -33,6 +35,6 @@ object RhythmProtocol {
     const val LONGITUDE = "longitude"
     const val ACCURACY = "accuracy"
 
-    fun path(prefix: String, sessionId: String, batchIndex: Long): String =
-        "$prefix$sessionId/$batchIndex"
+    fun path(prefix: String, sessionId: String, sequence: Long): String =
+        "$prefix$sessionId/$sequence"
 }

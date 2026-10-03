@@ -23,6 +23,7 @@ import androidx.health.services.client.data.ExerciseLapSummary
 import androidx.health.services.client.data.ExerciseType
 import androidx.health.services.client.data.ExerciseUpdate
 import androidx.health.services.client.data.LocationAccuracy
+import com.compx551.watchos.communication.WatchDataSender
 import com.compx551.watchos.storage.TemporarySessionStorage
 
 /** Latest values from the four capture sources retained by RhythmRun. */
@@ -72,6 +73,7 @@ data class LocationReading(
 class SensorCaptureManager(
     context: Context,
     private val temporaryStorage: TemporarySessionStorage,
+    private val watchDataSender: WatchDataSender,
     private val onStateChanged: (SensorCaptureState) -> Unit,
 ) : SensorEventListener {
     private val applicationContext = context.applicationContext
@@ -103,6 +105,7 @@ class SensorCaptureManager(
     private var emulatorHeartRateReceived = false
     private var currentSessionId: String? = null
     private var storageSequence = 0L
+    private var bootToEpochOffsetMillis = 0L
 
     private val measureHandoff = Runnable { finishMeasureAndStartExercise() }
 
@@ -204,21 +207,48 @@ class SensorCaptureManager(
                 val steps = cumulativeSteps ?: intervalStepTotal
                 if (cumulativeSteps != null || intervalSteps > 0L || cadence != null) {
                     currentSessionId?.let { sessionId ->
+                        val sequence = nextStorageSequence()
+                        val timestampNanos = SystemClock.elapsedRealtimeNanos()
                         temporaryStorage.saveSteps(
                             sessionId = sessionId,
-                            sequence = nextStorageSequence(),
-                            timestampNanosSinceBoot = SystemClock.elapsedRealtimeNanos(),
+                            sequence = sequence,
+                            timestampNanosSinceBoot = timestampNanos,
                             cumulativeSteps = steps,
                             cadenceStepsPerMinute = cadence,
                         )
+                        watchDataSender.sendSteps(
+                            sessionId = sessionId,
+                            sequence = sequence,
+                            timestampEpochMillis = toEpochMillis(timestampNanos),
+                            cumulativeSteps = steps,
+                            source = if (cumulativeSteps != null) "STEPS_TOTAL" else "STEPS",
+                        )
+                        cadence?.let { stepsPerMinute ->
+                            watchDataSender.sendCadence(
+                                sessionId = sessionId,
+                                sequence = sequence,
+                                timestampEpochMillis = toEpochMillis(timestampNanos),
+                                stepsPerMinute = stepsPerMinute,
+                                source = "STEPS_PER_MINUTE",
+                            )
+                        }
                     }
                 }
                 if (location != null) {
                     currentSessionId?.let { sessionId ->
+                        val sequence = nextStorageSequence()
                         temporaryStorage.saveLocation(
                             sessionId = sessionId,
-                            sequence = nextStorageSequence(),
+                            sequence = sequence,
                             reading = location,
+                        )
+                        watchDataSender.sendLocation(
+                            sessionId = sessionId,
+                            sequence = sequence,
+                            timestampEpochMillis = toEpochMillis(location.timestampNanosSinceBoot),
+                            latitudeDegrees = location.latitudeDegrees,
+                            longitudeDegrees = location.longitudeDegrees,
+                            horizontalAccuracyMetres = location.horizontalAccuracyMeters,
                         )
                     }
                 }
@@ -266,6 +296,7 @@ class SensorCaptureManager(
         this.fineLocationPermissionGranted = fineLocationPermissionGranted
         captureRequested = true
         storageSequence = 0L
+        bootToEpochOffsetMillis = System.currentTimeMillis() - SystemClock.elapsedRealtime()
         currentSessionId = temporaryStorage.beginSession()
         intervalStepTotal = 0L
         firstMeasureHeartRateAtMillis = null
@@ -382,10 +413,19 @@ class SensorCaptureManager(
                         zMetersPerSecondSquared = event.values[2],
                     )
                 currentSessionId?.let { sessionId ->
+                    val sequence = nextStorageSequence()
                     temporaryStorage.saveAccelerometer(
                         sessionId = sessionId,
-                        sequence = nextStorageSequence(),
+                        sequence = sequence,
                         reading = reading,
+                    )
+                    watchDataSender.sendAcceleration(
+                        sessionId = sessionId,
+                        sequence = sequence,
+                        timestampEpochMillis = toEpochMillis(reading.timestampNanosSinceBoot),
+                        x = reading.xMetersPerSecondSquared,
+                        y = reading.yMetersPerSecondSquared,
+                        z = reading.zMetersPerSecondSquared,
                     )
                 }
                 updateState { it.copy(acceleration = reading) }
@@ -569,12 +609,21 @@ class SensorCaptureManager(
 
     private fun saveHeartRate(beatsPerMinute: Double, source: HeartRateSource) {
         currentSessionId?.let { sessionId ->
+            val sequence = nextStorageSequence()
+            val timestampNanos = SystemClock.elapsedRealtimeNanos()
             temporaryStorage.saveHeartRate(
                 sessionId = sessionId,
-                sequence = nextStorageSequence(),
-                timestampNanosSinceBoot = SystemClock.elapsedRealtimeNanos(),
+                sequence = sequence,
+                timestampNanosSinceBoot = timestampNanos,
                 beatsPerMinute = beatsPerMinute,
                 source = source,
+            )
+            watchDataSender.sendHeartRate(
+                sessionId = sessionId,
+                sequence = sequence,
+                timestampEpochMillis = toEpochMillis(timestampNanos),
+                beatsPerMinute = beatsPerMinute,
+                source = source.name,
             )
         }
     }
@@ -593,6 +642,9 @@ class SensorCaptureManager(
 
     private fun nextStorageSequence(): Long = storageSequence++
 
+    private fun toEpochMillis(timestampNanosSinceBoot: Long): Long =
+        bootToEpochOffsetMillis + timestampNanosSinceBoot / NANOS_PER_MILLISECOND
+
     private fun futureError(future: java.util.concurrent.Future<*>): String? =
         try {
             future.get()
@@ -605,5 +657,6 @@ class SensorCaptureManager(
         const val ACCELEROMETER_PERIOD_MICROS = 50_000 // 20 Hz target.
         const val MEASURE_AFTER_FIRST_READING_MILLIS = 15_000L
         const val MEASURE_TOTAL_TIMEOUT_MILLIS = 20_000L
+        const val NANOS_PER_MILLISECOND = 1_000_000L
     }
 }

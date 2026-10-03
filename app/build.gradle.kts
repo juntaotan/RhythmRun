@@ -59,7 +59,6 @@ dependencies {
     implementation(libs.material)
     implementation(libs.play.services.wearable)
     implementation(libs.osmdroid.android)
-
     ksp(libs.androidx.room3.compiler)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.espresso.core)

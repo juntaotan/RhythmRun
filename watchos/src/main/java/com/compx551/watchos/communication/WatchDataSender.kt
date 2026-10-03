@@ -1,96 +1,118 @@
 package com.compx551.watchos.communication
 
 import android.content.Context
+import android.util.Log
+import com.google.android.gms.wearable.DataMap
 import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
 
-/** Serialises typed readings and stores them in the Wear OS Data Layer. */
+/** Serialises sensor readings and stores them in the persistent Wear Data Layer. */
 class WatchDataSender(context: Context) {
     private val dataClient = Wearable.getDataClient(context.applicationContext)
 
-    fun sendAcceleration(sessionId: String, sequence: Long, batchIndex: Long = sequence,
-        timestamp: Long, x: Float, y: Float, z: Float) {
-        put(RhythmProtocol.ACCEL_PATH_PREFIX, sessionId, batchIndex) {
-            putCommon(sessionId, sequence, timestamp)
-            putFloat(RhythmProtocol.ACCEL_X, x); putFloat(RhythmProtocol.ACCEL_Y, y); putFloat(RhythmProtocol.ACCEL_Z, z)
-        }
-    }
-
-    fun sendGyroscope(sessionId: String, sequence: Long, batchIndex: Long = sequence,
-        timestamp: Long, x: Float, y: Float, z: Float) {
-        put(RhythmProtocol.GYRO_PATH_PREFIX, sessionId, batchIndex) {
-            putCommon(sessionId, sequence, timestamp)
-            putFloat(RhythmProtocol.GYRO_X, x); putFloat(RhythmProtocol.GYRO_Y, y); putFloat(RhythmProtocol.GYRO_Z, z)
-        }
-    }
-
-    fun sendHeartRate(sessionId: String, sequence: Long, batchIndex: Long = sequence,
-        timestamp: Long, bpm: Float?, available: Boolean = bpm != null) {
-        put(RhythmProtocol.HEART_RATE_PATH_PREFIX, sessionId, batchIndex) {
-            putCommon(sessionId, sequence, timestamp)
-            putBoolean(RhythmProtocol.HEART_RATE_AVAILABLE, available)
-            putFloat(RhythmProtocol.HEART_RATE, bpm ?: Float.NaN)
-        }
-    }
-
-    fun sendSteps(sessionId: String, sequence: Long, batchIndex: Long = sequence,
-        timestamp: Long, count: Long, source: String) {
-        put(RhythmProtocol.STEPS_PATH_PREFIX, sessionId, batchIndex) {
-            putCommon(sessionId, sequence, timestamp)
-            putLong(RhythmProtocol.STEP_COUNT, count); putString(RhythmProtocol.STEP_SOURCE, source)
-        }
-    }
-
-    fun sendCadence(sessionId: String, sequence: Long, batchIndex: Long = sequence,
-        timestamp: Long, stepsPerMinute: Float, source: String, confidence: Float) {
-        put(RhythmProtocol.CADENCE_PATH_PREFIX, sessionId, batchIndex) {
-            putCommon(sessionId, sequence, timestamp)
-            putFloat(RhythmProtocol.CADENCE, stepsPerMinute)
-            putString(RhythmProtocol.CADENCE_SOURCE, source)
-            putFloat(RhythmProtocol.CADENCE_CONFIDENCE, confidence.coerceIn(0f, 1f))
-        }
-    }
-
-    fun sendLocation(sessionId: String, sequence: Long, batchIndex: Long = sequence,
-        timestamp: Long, latitude: Double, longitude: Double, accuracy: Double?) {
-        put(RhythmProtocol.LOCATION_PATH_PREFIX, sessionId, batchIndex) {
-            putCommon(sessionId, sequence, timestamp)
-            putDouble(RhythmProtocol.LATITUDE, latitude)
-            putDouble(RhythmProtocol.LONGITUDE, longitude)
-            accuracy?.let { putDouble(RhythmProtocol.ACCURACY, it) }
-        }
-    }
-
-    /** Compatibility helper: emits the three sensor types as independent records. */
-    fun sendSample(
+    fun sendAcceleration(
         sessionId: String,
         sequence: Long,
-        batchIndex: Long = sequence,
-        timestamp: Long,
-        acceleration: FloatArray,
-        gyroscope: FloatArray,
-        heartRateBpm: Float?,
-    ) {
-        require(acceleration.size >= 3) { "Acceleration must contain x, y and z" }
-        require(gyroscope.size >= 3) { "Gyroscope must contain x, y and z" }
-
-        sendAcceleration(sessionId, sequence, batchIndex, timestamp, acceleration[0], acceleration[1], acceleration[2])
-        sendGyroscope(sessionId, sequence, batchIndex, timestamp, gyroscope[0], gyroscope[1], gyroscope[2])
-        sendHeartRate(sessionId, sequence, batchIndex, timestamp, heartRateBpm)
+        timestampEpochMillis: Long,
+        x: Float,
+        y: Float,
+        z: Float,
+    ) = put(RhythmProtocol.ACCEL_PATH_PREFIX, sessionId, sequence) {
+        putCommon(sessionId, sequence, timestampEpochMillis)
+        putFloat(RhythmProtocol.ACCEL_X, x)
+        putFloat(RhythmProtocol.ACCEL_Y, y)
+        putFloat(RhythmProtocol.ACCEL_Z, z)
     }
 
-    private fun put(prefix: String, sessionId: String, batchIndex: Long,
-        fill: com.google.android.gms.wearable.DataMap.() -> Unit) {
-        val request = PutDataMapRequest.create(RhythmProtocol.path(prefix, sessionId, batchIndex))
+    fun sendGyroscope(
+        sessionId: String,
+        sequence: Long,
+        timestampEpochMillis: Long,
+        x: Float,
+        y: Float,
+        z: Float,
+    ) = put(RhythmProtocol.GYRO_PATH_PREFIX, sessionId, sequence) {
+        putCommon(sessionId, sequence, timestampEpochMillis)
+        putFloat(RhythmProtocol.GYRO_X, x)
+        putFloat(RhythmProtocol.GYRO_Y, y)
+        putFloat(RhythmProtocol.GYRO_Z, z)
+    }
+
+    fun sendHeartRate(
+        sessionId: String,
+        sequence: Long,
+        timestampEpochMillis: Long,
+        beatsPerMinute: Double,
+        source: String,
+    ) = put(RhythmProtocol.HEART_RATE_PATH_PREFIX, sessionId, sequence) {
+        putCommon(sessionId, sequence, timestampEpochMillis)
+        putBoolean(RhythmProtocol.HEART_RATE_AVAILABLE, true)
+        putFloat(RhythmProtocol.HEART_RATE, beatsPerMinute.toFloat())
+        putString(RhythmProtocol.HEART_RATE_SOURCE, source)
+    }
+
+    fun sendSteps(
+        sessionId: String,
+        sequence: Long,
+        timestampEpochMillis: Long,
+        cumulativeSteps: Long,
+        source: String,
+    ) = put(RhythmProtocol.STEPS_PATH_PREFIX, sessionId, sequence) {
+        putCommon(sessionId, sequence, timestampEpochMillis)
+        putLong(RhythmProtocol.STEP_COUNT, cumulativeSteps)
+        putString(RhythmProtocol.STEP_SOURCE, source)
+    }
+
+    fun sendCadence(
+        sessionId: String,
+        sequence: Long,
+        timestampEpochMillis: Long,
+        stepsPerMinute: Long,
+        source: String,
+    ) = put(RhythmProtocol.CADENCE_PATH_PREFIX, sessionId, sequence) {
+        putCommon(sessionId, sequence, timestampEpochMillis)
+        putFloat(RhythmProtocol.CADENCE, stepsPerMinute.toFloat())
+        putString(RhythmProtocol.CADENCE_SOURCE, source)
+        putFloat(RhythmProtocol.CADENCE_CONFIDENCE, 1f)
+    }
+
+    fun sendLocation(
+        sessionId: String,
+        sequence: Long,
+        timestampEpochMillis: Long,
+        latitudeDegrees: Double,
+        longitudeDegrees: Double,
+        horizontalAccuracyMetres: Double?,
+    ) = put(RhythmProtocol.LOCATION_PATH_PREFIX, sessionId, sequence) {
+        putCommon(sessionId, sequence, timestampEpochMillis)
+        putDouble(RhythmProtocol.LATITUDE, latitudeDegrees)
+        putDouble(RhythmProtocol.LONGITUDE, longitudeDegrees)
+        horizontalAccuracyMetres?.let { putDouble(RhythmProtocol.ACCURACY, it) }
+    }
+
+    private fun put(
+        prefix: String,
+        sessionId: String,
+        sequence: Long,
+        fill: DataMap.() -> Unit,
+    ) {
+        val request = PutDataMapRequest.create(RhythmProtocol.path(prefix, sessionId, sequence))
         request.dataMap.fill()
         dataClient.putDataItem(request.asPutDataRequest())
+            .addOnFailureListener { error -> Log.e(TAG, "Unable to enqueue Data Layer item", error) }
     }
 
-    private fun com.google.android.gms.wearable.DataMap.putCommon(
-        sessionId: String, sequence: Long, timestamp: Long
+    private fun DataMap.putCommon(
+        sessionId: String,
+        sequence: Long,
+        timestampEpochMillis: Long,
     ) {
         putString(RhythmProtocol.SESSION_ID, sessionId)
         putLong(RhythmProtocol.SEQUENCE, sequence)
-        putLong(RhythmProtocol.TIMESTAMP, timestamp)
+        putLong(RhythmProtocol.TIMESTAMP, timestampEpochMillis)
+    }
+
+    private companion object {
+        const val TAG = "WatchDataSender"
     }
 }
