@@ -13,8 +13,8 @@ android {
     }
 
     defaultConfig {
-        // Set applicationId to com.compx551.watchos for watch module
-        applicationId = "com.compx551.watchos"
+        // Data Layer communication requires the phone and watch package names to match.
+        applicationId = "com.compx551.rhythmrun"
         minSdk = 30
         targetSdk = 36
         versionCode = 1
