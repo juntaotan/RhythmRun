@@ -98,7 +98,7 @@ class WatchDataSender(context: Context) {
     ) {
         val request = PutDataMapRequest.create(RhythmProtocol.path(prefix, sessionId, sequence))
         request.dataMap.fill()
-        dataClient.putDataItem(request.asPutDataRequest())
+        dataClient.putDataItem(request.asPutDataRequest().setUrgent())
             .addOnFailureListener { error -> Log.e(TAG, "Unable to enqueue Data Layer item", error) }
     }
 
