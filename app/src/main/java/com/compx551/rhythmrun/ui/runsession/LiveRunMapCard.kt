@@ -179,7 +179,7 @@ fun LiveRunMapCard(
                             overlays.add(sMarker)
                         }
 
-                        currentLocation?.let {
+                        currentLocation?.takeIf { it.latitude != 0.0 || it.longitude != 0.0 }?.let {
                             val startPoint = GeoPoint(it.latitude, it.longitude)
                             controller.setCenter(startPoint)
                             cMarker.position = startPoint
@@ -190,13 +190,16 @@ fun LiveRunMapCard(
                 },
                 update = { mapView ->
                     val polyline = holder.polyline ?: return@AndroidView
-                    val pointsHash = routePoints.hashCode()
+                    val validRoutePoints = routePoints.filter { it.latitude != 0.0 || it.longitude != 0.0 }
+                    val validCurrentLocation = currentLocation?.takeIf { it.latitude != 0.0 || it.longitude != 0.0 }
+
+                    val pointsHash = validRoutePoints.hashCode()
                     val pointsChanged = pointsHash != holder.lastRenderedPointsHash
-                    val locationChanged = currentLocation != holder.lastRenderedLocation
+                    val locationChanged = validCurrentLocation != holder.lastRenderedLocation
 
                     if (pointsChanged) {
                         holder.lastRenderedPointsHash = pointsHash
-                        val geoPoints = routePoints.map { GeoPoint(it.latitude, it.longitude) }
+                        val geoPoints = validRoutePoints.map { GeoPoint(it.latitude, it.longitude) }
                         polyline.setPoints(geoPoints)
 
                         if (!isLive) {
@@ -227,9 +230,9 @@ fun LiveRunMapCard(
                     }
 
                     if (isLive && locationChanged) {
-                        holder.lastRenderedLocation = currentLocation
-                        currentLocation?.let {
-                            val currentGeo = GeoPoint(it.latitude, it.longitude)
+                        holder.lastRenderedLocation = validCurrentLocation
+                        validCurrentLocation?.let { loc ->
+                            val currentGeo = GeoPoint(loc.latitude, loc.longitude)
                             holder.currentMarker?.let { marker ->
                                 marker.position = currentGeo
                                 if (!mapView.overlays.contains(marker)) {

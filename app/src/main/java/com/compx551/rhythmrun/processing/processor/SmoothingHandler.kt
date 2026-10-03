@@ -24,6 +24,7 @@ class SmoothingHandler {
 
     private fun smoothLocation(): ProcessedLocation? {
         val locations = window.mapNotNull(ProcessedReading::location)
+            .filter { it.latitude != 0.0 || it.longitude != 0.0 }
         if (locations.isEmpty()) return null
 
         return ProcessedLocation(
