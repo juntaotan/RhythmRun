@@ -1,50 +1,26 @@
 package com.compx551.rhythmrun.communication
 
-/** Validated reading delivered by the phone-side background API listener. */
-sealed interface RhythmReading {
-    val sessionId: String
-    val sequence: Long
-    val timestampEpochMillis: Long
-
-    data class Acceleration(
-        override val sessionId: String,
-        override val sequence: Long,
-        override val timestampEpochMillis: Long,
-        val xMetersPerSecondSquared: Float,
-        val yMetersPerSecondSquared: Float,
-        val zMetersPerSecondSquared: Float,
-    ) : RhythmReading
-
-    data class HeartRate(
-        override val sessionId: String,
-        override val sequence: Long,
-        override val timestampEpochMillis: Long,
-        val beatsPerMinute: Float,
-        val source: String,
-    ) : RhythmReading
-
-    data class Steps(
-        override val sessionId: String,
-        override val sequence: Long,
-        override val timestampEpochMillis: Long,
-        val cumulativeSteps: Long,
-        val source: String,
-    ) : RhythmReading
-
-    data class Cadence(
-        override val sessionId: String,
-        override val sequence: Long,
-        override val timestampEpochMillis: Long,
-        val stepsPerMinute: Float,
-        val source: String,
-    ) : RhythmReading
-
-    data class Location(
-        override val sessionId: String,
-        override val sequence: Long,
-        override val timestampEpochMillis: Long,
-        val latitudeDegrees: Double,
-        val longitudeDegrees: Double,
-        val horizontalAccuracyMetres: Float?,
-    ) : RhythmReading
-}
+/** A validated record received from one versioned Data Layer path. */
+data class RhythmReading(
+    val dataType: String,
+    val sessionId: String,
+    val sequence: Long,
+    val timestamp: Long,
+    val accelerationX: Float? = null,
+    val accelerationY: Float? = null,
+    val accelerationZ: Float? = null,
+    val gyroscopeX: Float? = null,
+    val gyroscopeY: Float? = null,
+    val gyroscopeZ: Float? = null,
+    val heartRateBpm: Float? = null,
+    val heartRateAvailable: Boolean = false,
+    val heartRateSource: String? = null,
+    val stepCount: Long? = null,
+    val stepSource: String? = null,
+    val cadenceStepsPerMinute: Float? = null,
+    val cadenceSource: String? = null,
+    val cadenceConfidence: Float? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val accuracyMeters: Double? = null,
+)

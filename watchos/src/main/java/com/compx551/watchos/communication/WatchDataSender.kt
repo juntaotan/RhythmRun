@@ -6,7 +6,7 @@ import com.google.android.gms.wearable.DataMap
 import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
 
-/** Sends the four retained watch data sources through the persistent Wear Data Layer API. */
+/** Serialises sensor readings and stores them in the persistent Wear Data Layer. */
 class WatchDataSender(context: Context) {
     private val dataClient = Wearable.getDataClient(context.applicationContext)
 
@@ -24,6 +24,20 @@ class WatchDataSender(context: Context) {
         putFloat(RhythmProtocol.ACCEL_Z, z)
     }
 
+    fun sendGyroscope(
+        sessionId: String,
+        sequence: Long,
+        timestampEpochMillis: Long,
+        x: Float,
+        y: Float,
+        z: Float,
+    ) = put(RhythmProtocol.GYRO_PATH_PREFIX, sessionId, sequence) {
+        putCommon(sessionId, sequence, timestampEpochMillis)
+        putFloat(RhythmProtocol.GYRO_X, x)
+        putFloat(RhythmProtocol.GYRO_Y, y)
+        putFloat(RhythmProtocol.GYRO_Z, z)
+    }
+
     fun sendHeartRate(
         sessionId: String,
         sequence: Long,
@@ -32,6 +46,7 @@ class WatchDataSender(context: Context) {
         source: String,
     ) = put(RhythmProtocol.HEART_RATE_PATH_PREFIX, sessionId, sequence) {
         putCommon(sessionId, sequence, timestampEpochMillis)
+        putBoolean(RhythmProtocol.HEART_RATE_AVAILABLE, true)
         putFloat(RhythmProtocol.HEART_RATE, beatsPerMinute.toFloat())
         putString(RhythmProtocol.HEART_RATE_SOURCE, source)
     }
@@ -58,6 +73,7 @@ class WatchDataSender(context: Context) {
         putCommon(sessionId, sequence, timestampEpochMillis)
         putFloat(RhythmProtocol.CADENCE, stepsPerMinute.toFloat())
         putString(RhythmProtocol.CADENCE_SOURCE, source)
+        putFloat(RhythmProtocol.CADENCE_CONFIDENCE, 1f)
     }
 
     fun sendLocation(
@@ -71,8 +87,7 @@ class WatchDataSender(context: Context) {
         putCommon(sessionId, sequence, timestampEpochMillis)
         putDouble(RhythmProtocol.LATITUDE, latitudeDegrees)
         putDouble(RhythmProtocol.LONGITUDE, longitudeDegrees)
-        putBoolean(RhythmProtocol.HAS_LOCATION_ACCURACY, horizontalAccuracyMetres != null)
-        putFloat(RhythmProtocol.LOCATION_ACCURACY, horizontalAccuracyMetres?.toFloat() ?: 0f)
+        horizontalAccuracyMetres?.let { putDouble(RhythmProtocol.ACCURACY, it) }
     }
 
     private fun put(
@@ -84,9 +99,7 @@ class WatchDataSender(context: Context) {
         val request = PutDataMapRequest.create(RhythmProtocol.path(prefix, sessionId, sequence))
         request.dataMap.fill()
         dataClient.putDataItem(request.asPutDataRequest())
-            .addOnFailureListener { error ->
-                Log.e(TAG, "Unable to enqueue Data Layer item", error)
-            }
+            .addOnFailureListener { error -> Log.e(TAG, "Unable to enqueue Data Layer item", error) }
     }
 
     private fun DataMap.putCommon(
@@ -96,7 +109,7 @@ class WatchDataSender(context: Context) {
     ) {
         putString(RhythmProtocol.SESSION_ID, sessionId)
         putLong(RhythmProtocol.SEQUENCE, sequence)
-        putLong(RhythmProtocol.TIMESTAMP_EPOCH_MILLIS, timestampEpochMillis)
+        putLong(RhythmProtocol.TIMESTAMP, timestampEpochMillis)
     }
 
     private companion object {

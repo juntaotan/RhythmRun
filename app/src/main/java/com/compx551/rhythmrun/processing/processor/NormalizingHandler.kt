@@ -1,30 +1,25 @@
 package com.compx551.rhythmrun.processing.processor
 
+import com.compx551.rhythmrun.processing.model.ProcessedLocation
+import com.compx551.rhythmrun.processing.model.ProcessedReading
 import kotlin.math.sqrt
 
-/** Converts validated watch readings to the units consumed by smoothing and analysis. */
-class NormalizingHandler : ProcessingHandler() {
-    override fun process(request: ProcessingRequest): Boolean {
-        val result = normalize(request.readings, request.previousStepCounter)
-        request.normalizedReadings = result.readings
-        request.latestStepCounter = result.latestStepCounter
-        return true
-    }
+/** Converts one validated exercise event into a [ProcessedReading]. */
+class NormalizingHandler {
 
-    fun normalize(
-        readings: List<RawReading>,
-        previousStepCounter: RawReading.StepCounter? = null,
-    ): NormalizationResult {
-        val result = mutableListOf<NormalizedReading>()
-        var previousSteps = previousStepCounter
+    fun normalize(readings: List<RawReading>): ProcessedReading {
+        var processedReading = ProcessedReading(
+            timestampMillis = readings.maxOf(RawReading::timestampMillis),
+            heartRateBpm = 0.0,
+            accelerationPerSecond = 0.0,
+            velocityMetersPerSecond = 0.0,
+            stepCounterPerSecond = 0.0,
+        )
 
-        // A batch can contain interleaved sensors and out-of-order arrival. Preserve original
-        // order for equal timestamps; cadence is calculated only between consecutive step counts.
         for (reading in readings.sortedBy(RawReading::timestampMillis)) {
-            when (reading) {
-                is RawReading.HeartRate -> result += NormalizedReading.HeartRate(
-                    reading.timestampMillis,
-                    reading.beatsPerMinute,
+            processedReading = when (reading) {
+                is RawReading.HeartRate -> processedReading.copy(
+                    heartRateBpm = reading.beatsPerMinute,
                 )
 
                 is RawReading.Acceleration -> {
@@ -35,50 +30,32 @@ class NormalizingHandler : ProcessingHandler() {
                     val x = reading.x * factor
                     val y = reading.y * factor
                     val z = reading.z * factor
-                    result += NormalizedReading.Acceleration(
-                        reading.timestampMillis,
-                        x,
-                        y,
-                        z,
-                        sqrt(x * x + y * y + z * z),
+                    processedReading.copy(
+                        accelerationPerSecond = sqrt(x * x + y * y + z * z),
                     )
                 }
 
-                is RawReading.Velocity -> result += NormalizedReading.Velocity(
-                    reading.timestampMillis,
-                    when (reading.unit) {
+                is RawReading.Velocity -> processedReading.copy(
+                    velocityMetersPerSecond = when (reading.unit) {
                         VelocityUnit.METERS_PER_SECOND -> reading.value
                         VelocityUnit.KILOMETERS_PER_HOUR -> reading.value / 3.6
                     },
                 )
 
-                is RawReading.StepCounter -> {
-                    val previous = previousSteps
-                    if (previous != null) {
-                        val elapsedMillis = reading.timestampMillis - previous.timestampMillis
-                        val stepDelta = reading.totalSteps - previous.totalSteps
-                        if (elapsedMillis > 0 && stepDelta >= 0) {
-                            result += NormalizedReading.Cadence(
-                                timestampMillis = reading.timestampMillis,
-                                stepsPerMinute = stepDelta * 60_000.0 / elapsedMillis,
-                                intervalStartMillis = previous.timestampMillis,
-                            )
-                        }
-                    }
-                    // A reset/reboot starts a new baseline. Equal or older timestamps must not
-                    // replace the baseline or create a zero-duration cadence interval.
-                    if (previous == null || reading.timestampMillis > previous.timestampMillis) {
-                        previousSteps = reading
-                    }
-                }
+                is RawReading.StepCounter -> processedReading.copy(
+                    stepCounterPerSecond = reading.stepsPerSecond.toDouble(),
+                )
+
+                is RawReading.Location -> processedReading.copy(
+                    location = ProcessedLocation(
+                        latitude = reading.latitude,
+                        longitude = reading.longitude,
+                        accuracyMeters = reading.accuracyMeters,
+                    ),
+                )
             }
         }
 
-        return NormalizationResult(result, previousSteps)
+        return processedReading
     }
 }
-
-data class NormalizationResult(
-    val readings: List<NormalizedReading>,
-    val latestStepCounter: RawReading.StepCounter?,
-)

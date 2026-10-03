@@ -1,0 +1,652 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "abd1be834820284e4d8c5062ce506626",
+    "entities": [
+      {
+        "tableName": "phone_run_sessions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `startEpochMillis` INTEGER NOT NULL, `startLocalDate` TEXT NOT NULL, `startLocalTime` TEXT NOT NULL, `timeZoneId` TEXT NOT NULL, `title` TEXT NOT NULL, `state` TEXT NOT NULL, `guidanceEnabled` INTEGER NOT NULL, `outdoorRouteEnabled` INTEGER NOT NULL, `endEpochMillis` INTEGER, PRIMARY KEY(`sessionId`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startEpochMillis",
+            "columnName": "startEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startLocalDate",
+            "columnName": "startLocalDate",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startLocalTime",
+            "columnName": "startLocalTime",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timeZoneId",
+            "columnName": "timeZoneId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "guidanceEnabled",
+            "columnName": "guidanceEnabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "outdoorRouteEnabled",
+            "columnName": "outdoorRouteEnabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endEpochMillis",
+            "columnName": "endEpochMillis",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_phone_run_sessions_startEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "startEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_phone_run_sessions_startEpochMillis` ON `${TABLE_NAME}` (`startEpochMillis`)"
+          },
+          {
+            "name": "index_phone_run_sessions_startLocalDate",
+            "unique": false,
+            "columnNames": [
+              "startLocalDate"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_phone_run_sessions_startLocalDate` ON `${TABLE_NAME}` (`startLocalDate`)"
+          }
+        ]
+      },
+      {
+        "tableName": "phone_run_stages",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `stageOrder` INTEGER NOT NULL, `stage` TEXT NOT NULL, `plannedDurationSeconds` INTEGER NOT NULL, `targetCadenceSpm` INTEGER, `actualDurationSeconds` INTEGER, `averageCadenceSpm` INTEGER, `averageHeartRateBpm` INTEGER, `movementMagnitude` REAL, PRIMARY KEY(`sessionId`, `stageOrder`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stageOrder",
+            "columnName": "stageOrder",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stage",
+            "columnName": "stage",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "plannedDurationSeconds",
+            "columnName": "plannedDurationSeconds",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetCadenceSpm",
+            "columnName": "targetCadenceSpm",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "actualDurationSeconds",
+            "columnName": "actualDurationSeconds",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "averageCadenceSpm",
+            "columnName": "averageCadenceSpm",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "averageHeartRateBpm",
+            "columnName": "averageHeartRateBpm",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "movementMagnitude",
+            "columnName": "movementMagnitude",
+            "affinity": "REAL"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId",
+            "stageOrder"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_phone_run_stages_sessionId",
+            "unique": false,
+            "columnNames": [
+              "sessionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_phone_run_stages_sessionId` ON `${TABLE_NAME}` (`sessionId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "phone_run_summaries",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `totalDurationSeconds` INTEGER NOT NULL, `distanceMetres` REAL, `averageHeartRateBpm` INTEGER, `averageCadenceSpm` INTEGER, `cadenceSource` TEXT NOT NULL, `targetAdherencePercent` INTEGER, `rhythmStabilityPercent` INTEGER, `averageMovementMagnitude` REAL, `heartRateResponseBpm` INTEGER, `cueCoveragePercent` INTEGER, `dataCoveragePercent` INTEGER, PRIMARY KEY(`sessionId`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalDurationSeconds",
+            "columnName": "totalDurationSeconds",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "distanceMetres",
+            "columnName": "distanceMetres",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "averageHeartRateBpm",
+            "columnName": "averageHeartRateBpm",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "averageCadenceSpm",
+            "columnName": "averageCadenceSpm",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "cadenceSource",
+            "columnName": "cadenceSource",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetAdherencePercent",
+            "columnName": "targetAdherencePercent",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "rhythmStabilityPercent",
+            "columnName": "rhythmStabilityPercent",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "averageMovementMagnitude",
+            "columnName": "averageMovementMagnitude",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "heartRateResponseBpm",
+            "columnName": "heartRateResponseBpm",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "cueCoveragePercent",
+            "columnName": "cueCoveragePercent",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "dataCoveragePercent",
+            "columnName": "dataCoveragePercent",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId"
+          ]
+        }
+      },
+      {
+        "tableName": "phone_raw_sensor_readings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `sensorType` TEXT NOT NULL, `sequence` INTEGER NOT NULL, `timestampEpochMillis` INTEGER NOT NULL, `x` REAL, `y` REAL, `z` REAL, `scalarValue` REAL, `unit` TEXT NOT NULL, `source` TEXT, `available` INTEGER NOT NULL, PRIMARY KEY(`sessionId`, `sensorType`, `sequence`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sensorType",
+            "columnName": "sensorType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sequence",
+            "columnName": "sequence",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestampEpochMillis",
+            "columnName": "timestampEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "x",
+            "columnName": "x",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "y",
+            "columnName": "y",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "z",
+            "columnName": "z",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "scalarValue",
+            "columnName": "scalarValue",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "unit",
+            "columnName": "unit",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "available",
+            "columnName": "available",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId",
+            "sensorType",
+            "sequence"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_phone_raw_sensor_readings_sessionId_timestampEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "sessionId",
+              "timestampEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_phone_raw_sensor_readings_sessionId_timestampEpochMillis` ON `${TABLE_NAME}` (`sessionId`, `timestampEpochMillis`)"
+          }
+        ]
+      },
+      {
+        "tableName": "phone_location_fixes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `sequence` INTEGER NOT NULL, `timestampEpochMillis` INTEGER NOT NULL, `latitude` REAL, `longitude` REAL, `accuracyMetres` REAL, `available` INTEGER NOT NULL, `gapBefore` INTEGER NOT NULL, PRIMARY KEY(`sessionId`, `sequence`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sequence",
+            "columnName": "sequence",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestampEpochMillis",
+            "columnName": "timestampEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "latitude",
+            "columnName": "latitude",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "longitude",
+            "columnName": "longitude",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "accuracyMetres",
+            "columnName": "accuracyMetres",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "available",
+            "columnName": "available",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gapBefore",
+            "columnName": "gapBefore",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId",
+            "sequence"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_phone_location_fixes_sessionId_timestampEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "sessionId",
+              "timestampEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_phone_location_fixes_sessionId_timestampEpochMillis` ON `${TABLE_NAME}` (`sessionId`, `timestampEpochMillis`)"
+          }
+        ]
+      },
+      {
+        "tableName": "phone_stage_changes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `sequence` INTEGER NOT NULL, `timestampEpochMillis` INTEGER NOT NULL, `stage` TEXT NOT NULL, `reason` TEXT NOT NULL, PRIMARY KEY(`sessionId`, `sequence`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sequence",
+            "columnName": "sequence",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestampEpochMillis",
+            "columnName": "timestampEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stage",
+            "columnName": "stage",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reason",
+            "columnName": "reason",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId",
+            "sequence"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_phone_stage_changes_sessionId_timestampEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "sessionId",
+              "timestampEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_phone_stage_changes_sessionId_timestampEpochMillis` ON `${TABLE_NAME}` (`sessionId`, `timestampEpochMillis`)"
+          }
+        ]
+      },
+      {
+        "tableName": "phone_cue_events",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `sequence` INTEGER NOT NULL, `intendedTimestampEpochMillis` INTEGER NOT NULL, `actualTimestampEpochMillis` INTEGER, `stage` TEXT NOT NULL, `delivered` INTEGER NOT NULL, PRIMARY KEY(`sessionId`, `sequence`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sequence",
+            "columnName": "sequence",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "intendedTimestampEpochMillis",
+            "columnName": "intendedTimestampEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "actualTimestampEpochMillis",
+            "columnName": "actualTimestampEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "stage",
+            "columnName": "stage",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "delivered",
+            "columnName": "delivered",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId",
+            "sequence"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_phone_cue_events_sessionId_intendedTimestampEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "sessionId",
+              "intendedTimestampEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_phone_cue_events_sessionId_intendedTimestampEpochMillis` ON `${TABLE_NAME}` (`sessionId`, `intendedTimestampEpochMillis`)"
+          }
+        ]
+      },
+      {
+        "tableName": "phone_analysis_windows",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `windowStartEpochMillis` INTEGER NOT NULL, `windowEndEpochMillis` INTEGER NOT NULL, `analysisVersion` TEXT NOT NULL, `cadenceSpm` REAL, `cadenceSource` TEXT NOT NULL, `rhythmStabilityPercent` REAL, `movementMagnitude` REAL, `averageHeartRateBpm` REAL, `confidencePercent` REAL, `coveragePercent` REAL, PRIMARY KEY(`sessionId`, `windowStartEpochMillis`, `analysisVersion`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "windowStartEpochMillis",
+            "columnName": "windowStartEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "windowEndEpochMillis",
+            "columnName": "windowEndEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "analysisVersion",
+            "columnName": "analysisVersion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cadenceSpm",
+            "columnName": "cadenceSpm",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "cadenceSource",
+            "columnName": "cadenceSource",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rhythmStabilityPercent",
+            "columnName": "rhythmStabilityPercent",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "movementMagnitude",
+            "columnName": "movementMagnitude",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "averageHeartRateBpm",
+            "columnName": "averageHeartRateBpm",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "confidencePercent",
+            "columnName": "confidencePercent",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "coveragePercent",
+            "columnName": "coveragePercent",
+            "affinity": "REAL"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId",
+            "windowStartEpochMillis",
+            "analysisVersion"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_phone_analysis_windows_sessionId_windowStartEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "sessionId",
+              "windowStartEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_phone_analysis_windows_sessionId_windowStartEpochMillis` ON `${TABLE_NAME}` (`sessionId`, `windowStartEpochMillis`)"
+          }
+        ]
+      },
+      {
+        "tableName": "phone_incomplete_data_messages",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `messageOrder` INTEGER NOT NULL, `message` TEXT NOT NULL, PRIMARY KEY(`sessionId`, `messageOrder`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "messageOrder",
+            "columnName": "messageOrder",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "message",
+            "columnName": "message",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId",
+            "messageOrder"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_phone_incomplete_data_messages_sessionId",
+            "unique": false,
+            "columnNames": [
+              "sessionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_phone_incomplete_data_messages_sessionId` ON `${TABLE_NAME}` (`sessionId`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'abd1be834820284e4d8c5062ce506626')"
+    ]
+  }
+}
