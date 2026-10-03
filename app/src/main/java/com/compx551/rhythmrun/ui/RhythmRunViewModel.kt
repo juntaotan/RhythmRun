@@ -39,6 +39,8 @@ import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -53,6 +55,7 @@ class RhythmRunViewModel(
     private val timeZone: TimeZone = TimeZone.getDefault(),
 ) : ViewModel() {
     private var liveRunProcessor: LiveRunProcessor? = null
+    private var timerJob: Job? = null
     private var activeRunStartedAtMillis: Long? = null
     private val initialCalendar = Calendar.getInstance(timeZone)
     private val selectedMonth = MutableStateFlow(
@@ -250,6 +253,13 @@ class RhythmRunViewModel(
         val processor = LiveRunProcessor()
         liveRunProcessor = processor
 
+        timerJob = viewModelScope.launch {
+            while (true) {
+                delay(1000L)
+                advanceTimer()
+            }
+        }
+
         viewModelScope.launch {
             processor.processedReadings.collect { readings ->
                 readings.lastOrNull()?.let(::updateLiveMetrics)
@@ -267,6 +277,46 @@ class RhythmRunViewModel(
                 )
             }
             processor.onReading(reading)
+        }
+    }
+
+    private fun advanceTimer() {
+        val live = runSessionState.liveRun
+        if (live.isPaused) return
+
+        val newStageElapsed = live.stageElapsedSeconds + 1L
+        val newTotalElapsed = live.totalElapsedSeconds + 1L
+
+        if (newStageElapsed >= live.stageDurationSeconds && live.stageDurationSeconds > 0L) {
+            val nextStageNum = live.currentStageNumber + 1
+            if (nextStageNum <= runSessionState.stages.size) {
+                val nextStagePlan = runSessionState.stages[nextStageNum - 1]
+                val nextDuration = (nextStagePlan.durationMinutesInput.toLongOrNull() ?: 0L) * 60L
+                runSessionState = runSessionState.copy(
+                    liveRun = live.copy(
+                        currentStage = nextStagePlan.stage,
+                        currentStageNumber = nextStageNum,
+                        stageElapsedSeconds = 0L,
+                        stageDurationSeconds = nextDuration,
+                        totalElapsedSeconds = newTotalElapsed,
+                        targetCadenceSpm = nextStagePlan.targetCadenceSpmInput?.toIntOrNull(),
+                    ),
+                )
+            } else {
+                runSessionState = runSessionState.copy(
+                    liveRun = live.copy(
+                        stageElapsedSeconds = newStageElapsed,
+                        totalElapsedSeconds = newTotalElapsed,
+                    ),
+                )
+            }
+        } else {
+            runSessionState = runSessionState.copy(
+                liveRun = live.copy(
+                    stageElapsedSeconds = newStageElapsed,
+                    totalElapsedSeconds = newTotalElapsed,
+                ),
+            )
         }
     }
 
@@ -303,6 +353,8 @@ class RhythmRunViewModel(
     }
 
     private fun stopLiveProcessing() {
+        timerJob?.cancel()
+        timerJob = null
         RhythmDataListenerService.readingListener = null
         liveRunProcessor = null
     }
