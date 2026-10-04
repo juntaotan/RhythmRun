@@ -2,41 +2,39 @@ package com.compx551.rhythmrun.communication
 
 import android.content.Intent
 import android.util.Log
+import com.compx551.rhythmrun.data.local.PhoneRoomDatabase
+import com.compx551.rhythmrun.data.repository.RoomRunRepository
+import com.compx551.rhythmrun.domain.model.LocationFixRecord
+import com.compx551.rhythmrun.domain.model.RawSensorRecord
+import com.compx551.rhythmrun.domain.model.RunDataBatch
+import com.compx551.rhythmrun.domain.model.StoredSensorType
 import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.DataMap
 import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.WearableListenerService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /** Receives, validates and exposes persisted watch readings while the phone UI is closed. */
 class RhythmDataListenerService : WearableListenerService() {
     private val lastSequenceByType = mutableMapOf<String, Long>()
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val repository by lazy {
+        RoomRunRepository(PhoneRoomDatabase.getInstance(applicationContext))
+    }
 
     override fun onDataChanged(dataEvents: DataEventBuffer) {
-        val listener = readingListener
         dataEvents
             .filter { it.type == DataEvent.TYPE_CHANGED }
             .forEach { event ->
                 val dataType = RhythmProtocol.dataType(event.dataItem.uri.path) ?: return@forEach
                 val reading = decode(dataType, DataMapItem.fromDataItem(event.dataItem).dataMap)
                     ?: return@forEach
-                val recordKey = "${reading.sessionId}:${reading.dataType}:${reading.sequence}"
-
-                if (listener != null) {
-                    if (!remember(recordKey)) return@forEach
-
-                    val previousSequence = lastSequenceByType[reading.dataType]
-                    val missingFrom = previousSequence?.plus(1)?.takeIf { reading.sequence > it }
-                    val missingTo = missingFrom?.let { reading.sequence - 1 }
-                    lastSequenceByType[reading.dataType] = maxOf(
-                        reading.sequence,
-                        previousSequence ?: reading.sequence,
-                    )
-
-                    listener.invoke(reading)
-                    sendBroadcast(reading.toIntent(missingFrom, missingTo).setPackage(packageName))
-                }
+                processReading(reading)
             }
     }
 
@@ -46,7 +44,6 @@ class RhythmDataListenerService : WearableListenerService() {
         val dataType = pathParts[3]
         val sessionId = pathParts[4]
         val sequence = pathParts[5].toLongOrNull() ?: return
-        val recordKey = "$sessionId:$dataType:$sequence"
 
         val payloadStr = String(event.data, Charsets.UTF_8)
         val parts = payloadStr.split(';')
@@ -112,20 +109,117 @@ class RhythmDataListenerService : WearableListenerService() {
         }
 
         if (isValid(reading)) {
-            val listener = readingListener
-            if (listener != null) {
-                if (!remember(recordKey)) return
-                val previousSequence = lastSequenceByType[reading.dataType]
-                val missingFrom = previousSequence?.plus(1)?.takeIf { reading.sequence > it }
-                val missingTo = missingFrom?.let { reading.sequence - 1 }
-                lastSequenceByType[reading.dataType] = maxOf(
-                    reading.sequence,
-                    previousSequence ?: reading.sequence,
-                )
-                listener.invoke(reading)
-                sendBroadcast(reading.toIntent(missingFrom, missingTo).setPackage(packageName))
-            }
+            processReading(reading)
         }
+    }
+
+    private fun processReading(reading: RhythmReading) {
+        val recordKey = "${reading.sessionId}:${reading.dataType}:${reading.sequence}"
+        if (!remember(recordKey)) return
+
+        val previousSequence = lastSequenceByType[reading.dataType]
+        val missingFrom = previousSequence?.plus(1)?.takeIf { reading.sequence > it }
+        val missingTo = missingFrom?.let { reading.sequence - 1 }
+        lastSequenceByType[reading.dataType] = maxOf(
+            reading.sequence,
+            previousSequence ?: reading.sequence,
+        )
+
+        serviceScope.launch {
+            repository.persistBatch(reading.toRunDataBatch())
+        }
+
+        readingListener?.invoke(reading)
+        sendBroadcast(reading.toIntent(missingFrom, missingTo).setPackage(packageName))
+    }
+
+    private fun RhythmReading.toRunDataBatch(): RunDataBatch = when (dataType) {
+        "accel" -> RunDataBatch(
+            rawReadings = listOf(
+                RawSensorRecord(
+                    sessionId = sessionId,
+                    sensorType = StoredSensorType.Accelerometer,
+                    sequence = sequence,
+                    timestampEpochMillis = timestamp,
+                    x = accelerationX?.toDouble(),
+                    y = accelerationY?.toDouble(),
+                    z = accelerationZ?.toDouble(),
+                    unit = "m/s^2",
+                    available = true,
+                )
+            )
+        )
+        "gyro" -> RunDataBatch(
+            rawReadings = listOf(
+                RawSensorRecord(
+                    sessionId = sessionId,
+                    sensorType = StoredSensorType.Gyroscope,
+                    sequence = sequence,
+                    timestampEpochMillis = timestamp,
+                    x = gyroscopeX?.toDouble(),
+                    y = gyroscopeY?.toDouble(),
+                    z = gyroscopeZ?.toDouble(),
+                    unit = "rad/s",
+                    available = true,
+                )
+            )
+        )
+        "hr" -> RunDataBatch(
+            rawReadings = listOf(
+                RawSensorRecord(
+                    sessionId = sessionId,
+                    sensorType = StoredSensorType.HeartRate,
+                    sequence = sequence,
+                    timestampEpochMillis = timestamp,
+                    scalarValue = heartRateBpm?.toDouble(),
+                    unit = "bpm",
+                    source = heartRateSource,
+                    available = heartRateAvailable,
+                )
+            )
+        )
+        "steps" -> RunDataBatch(
+            rawReadings = listOf(
+                RawSensorRecord(
+                    sessionId = sessionId,
+                    sensorType = StoredSensorType.StepCount,
+                    sequence = sequence,
+                    timestampEpochMillis = timestamp,
+                    scalarValue = stepCount?.toDouble(),
+                    unit = "steps",
+                    source = stepSource,
+                    available = true,
+                )
+            )
+        )
+        "cadence" -> RunDataBatch(
+            rawReadings = listOf(
+                RawSensorRecord(
+                    sessionId = sessionId,
+                    sensorType = StoredSensorType.StepCadence,
+                    sequence = sequence,
+                    timestampEpochMillis = timestamp,
+                    scalarValue = cadenceStepsPerMinute?.toDouble(),
+                    unit = "spm",
+                    source = cadenceSource,
+                    available = true,
+                )
+            )
+        )
+        "location" -> RunDataBatch(
+            locationFixes = listOf(
+                LocationFixRecord(
+                    sessionId = sessionId,
+                    sequence = sequence,
+                    timestampEpochMillis = timestamp,
+                    latitude = latitude,
+                    longitude = longitude,
+                    accuracyMetres = accuracyMeters,
+                    available = true,
+                )
+            )
+        )
+        else -> RunDataBatch()
     }
 
     private fun decode(dataType: String, map: DataMap): RhythmReading? {

@@ -4,7 +4,7 @@
     <selectionStates>
       <SelectionState runConfigName="app">
         <option name="selectionMode" value="DROPDOWN" />
-        <DropdownSelection timestamp="2026-10-03T21:00:44.372711Z">
+        <DropdownSelection timestamp="2026-10-04T01:10:13.185245Z">
           <Target type="DEFAULT_BOOT">
             <handle>
               <DeviceId pluginId="PhysicalDevice" identifier="serial=R5GL4177C2H" />
@@ -15,10 +15,10 @@
       </SelectionState>
       <SelectionState runConfigName="watchos">
         <option name="selectionMode" value="DROPDOWN" />
-        <DropdownSelection timestamp="2026-10-04T00:49:07.651917Z">
+        <DropdownSelection timestamp="2026-10-04T01:08:46.681934Z">
           <Target type="DEFAULT_BOOT">
             <handle>
-              <DeviceId pluginId="PhysicalDevice" identifier="serial=R5GL4177C2H" />
+              <DeviceId pluginId="PhysicalDevice" identifier="serial=RFAY507842W" />
             </handle>
           </Target>
         </DropdownSelection>
