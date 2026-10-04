@@ -94,11 +94,6 @@ class MainActivity : ComponentActivity() {
             WearApp(
                 state = captureState,
                 permissionMessage = permissionMessage,
-                onStart = {
-                    pendingSessionId = null
-                    requestPermissionsAndStart(null)
-                },
-                onStop = { sensorCaptureManager.stopCapture() },
                 showExerciseHistory = showExerciseHistory,
                 onViewExerciseHistory = { showExerciseHistory = true },
                 onCloseExerciseHistory = { showExerciseHistory = false },
@@ -134,6 +129,8 @@ class MainActivity : ComponentActivity() {
                     requestPermissionsAndStart(sessionId)
                 } else if (path == RhythmProtocol.SESSION_RESUME_PATH && captureState.phase == CapturePhase.STOPPING) {
                     pendingResumeSessionId = sessionId
+                } else if (captureState.phase != CapturePhase.STOPPING && !sessionId.isNullOrBlank()) {
+                    sensorCaptureManager.updateSessionId(sessionId)
                 }
             }
             RhythmProtocol.SESSION_PAUSE_PATH -> {
@@ -215,8 +212,6 @@ class MainActivity : ComponentActivity() {
 fun WearApp(
     state: SensorCaptureState,
     permissionMessage: String?,
-    onStart: () -> Unit,
-    onStop: () -> Unit,
     showExerciseHistory: Boolean,
     onViewExerciseHistory: () -> Unit,
     onCloseExerciseHistory: () -> Unit,
@@ -311,17 +306,6 @@ fun WearApp(
                                 state.unavailableMetrics.joinToString(),
                                 transformationSpec,
                             )
-                        }
-                    }
-                    item {
-                        Button(
-                            onClick =
-                                if (state.phase == CapturePhase.IDLE) onStart else onStop,
-                            modifier =
-                                Modifier.fillMaxWidth().transformedHeight(this, transformationSpec),
-                            transformation = SurfaceTransformation(transformationSpec),
-                        ) {
-                            Text(if (state.phase == CapturePhase.IDLE) "Start capture" else "Stop capture")
                         }
                     }
                     item {
@@ -422,8 +406,6 @@ fun DefaultPreview() {
     WearApp(
         state = SensorCaptureState(),
         permissionMessage = null,
-        onStart = {},
-        onStop = {},
         showExerciseHistory = false,
         onViewExerciseHistory = {},
         onCloseExerciseHistory = {},

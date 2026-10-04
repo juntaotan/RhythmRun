@@ -3,7 +3,6 @@ package com.compx551.rhythmrun.processing.processor
 import com.compx551.rhythmrun.processing.model.EfficiencyBaseline
 import com.compx551.rhythmrun.processing.model.ProcessedReading
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Test
 
 class AnalyzingHandlerTest {
@@ -20,10 +19,10 @@ class AnalyzingHandlerTest {
     }
 
     @Test
-    fun omitsEfficiencyWithoutHistoricalBaseline() {
+    fun usesOneAsDenominatorWithoutHistoricalBaseline() {
         val reading = ProcessedReading(1_000, 100.0, 1.0, 4.0, 3.0)
         val analyzed = AnalyzingHandler().analyze(reading, EfficiencyBaseline(0.0, 0.0, 0))
 
-        assertNull(analyzed.efficiency)
+        assertEquals(0.04, analyzed.efficiency!!, 1e-9)
     }
 }

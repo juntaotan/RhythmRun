@@ -8,6 +8,7 @@ import com.compx551.rhythmrun.domain.model.LocationFixRecord
 import com.compx551.rhythmrun.domain.model.RawSensorRecord
 import com.compx551.rhythmrun.domain.model.RunDataBatch
 import com.compx551.rhythmrun.domain.model.StoredSensorType
+import com.compx551.rhythmrun.location.PhoneLocationService
 import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.DataMap
@@ -113,6 +114,9 @@ class RhythmDataListenerService : WearableListenerService() {
     }
 
     private fun processReading(reading: RhythmReading) {
+        if (reading.dataType == "location" &&
+            PhoneLocationService.isPhoneRouteSession(this, reading.sessionId)
+        ) return
         val recordKey = "${reading.sessionId}:${reading.dataType}:${reading.sequence}"
         if (!remember(recordKey)) return
 

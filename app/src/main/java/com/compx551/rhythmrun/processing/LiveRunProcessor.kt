@@ -5,7 +5,8 @@ import com.compx551.rhythmrun.processing.model.EfficiencyBaseline
 import com.compx551.rhythmrun.processing.model.ProcessedReading
 import com.compx551.rhythmrun.processing.processor.RawReading
 import kotlinx.coroutines.flow.StateFlow
-import kotlin.math.roundToLong
+
+private const val CADENCE_MAX_AGE_MILLIS = 10_000L
 
 /**
  * Bridges incoming [RhythmReading] streams from the communication API to [RhythmProcessor].
@@ -22,7 +23,10 @@ class LiveRunProcessor(
 
     private var latestHr: Double? = null
     private var latestAccel: Triple<Double, Double, Double>? = null
-    private var latestCadenceSpm: Float? = null
+    private var latestDirectCadenceSpm: Float? = null
+    private var latestDirectCadenceTimestamp: Long? = null
+    private var latestDerivedCadenceSpm: Float? = null
+    private var latestDerivedCadenceTimestamp: Long? = null
     private var latestLocation: Pair<Double, Double>? = null
     private var latestAccuracy: Double? = null
     private var previousStepCount: Long? = null
@@ -37,7 +41,10 @@ class LiveRunProcessor(
             currentSessionId = reading.sessionId
             latestHr = null
             latestAccel = null
-            latestCadenceSpm = null
+            latestDirectCadenceSpm = null
+            latestDirectCadenceTimestamp = null
+            latestDerivedCadenceSpm = null
+            latestDerivedCadenceTimestamp = null
             latestLocation = null
             latestAccuracy = null
             previousStepCount = null
@@ -52,19 +59,16 @@ class LiveRunProcessor(
                 reading.accelerationZ.toDouble(),
             )
         }
-        reading.cadenceStepsPerMinute?.let { if (it > 0f) latestCadenceSpm = it }
+        reading.cadenceStepsPerMinute?.let {
+            latestDirectCadenceSpm = it
+            latestDirectCadenceTimestamp = ts
+        }
         reading.stepCount?.let { currentSteps ->
             val prevSteps = previousStepCount
             val prevTs = previousStepTimestamp
-            if (prevSteps != null && prevTs != null && currentSteps > prevSteps && ts > prevTs) {
-                val deltaSteps = currentSteps - prevSteps
-                val deltaSeconds = (ts - prevTs) / 1000.0
-                if (deltaSeconds > 0.0) {
-                    val derivedSpm = ((deltaSteps / deltaSeconds) * 60.0).toFloat()
-                    if (derivedSpm > 0f) {
-                        latestCadenceSpm = derivedSpm
-                    }
-                }
+            if (prevSteps != null && prevTs != null && currentSteps >= prevSteps && ts > prevTs) {
+                latestDerivedCadenceSpm = ((currentSteps - prevSteps) * 60_000.0 / (ts - prevTs)).toFloat()
+                latestDerivedCadenceTimestamp = ts
             }
             previousStepCount = currentSteps
             previousStepTimestamp = ts
@@ -74,12 +78,17 @@ class LiveRunProcessor(
             latestAccuracy = reading.accuracyMeters
         }
 
+        val cadenceSpm = when {
+            latestDirectCadenceTimestamp?.let { ts - it <= CADENCE_MAX_AGE_MILLIS } == true -> latestDirectCadenceSpm
+            latestDerivedCadenceTimestamp?.let { ts - it <= CADENCE_MAX_AGE_MILLIS } == true -> latestDerivedCadenceSpm
+            latestDirectCadenceSpm != null || latestDerivedCadenceSpm != null -> 0f
+            else -> null
+        }
         val readings = buildList {
             latestHr?.let { add(RawReading.HeartRate(ts, it)) }
             latestAccel?.let { (x, y, z) -> add(RawReading.Acceleration(ts, x, y, z)) }
-            latestCadenceSpm?.let { spm ->
-                val sps = (spm / 60.0).roundToLong().coerceAtLeast(1L)
-                add(RawReading.StepCounter(ts, sps))
+            cadenceSpm?.let { spm ->
+                add(RawReading.StepCounter(ts, spm / 60.0))
                 add(RawReading.Velocity(ts, (spm / 60.0) * EfficiencyBaseline.STRIDE_LENGTH_METERS))
             }
             latestLocation?.let { (lat, lon) ->

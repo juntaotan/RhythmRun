@@ -104,7 +104,7 @@ class SensorCaptureManager(
     private var activityPermissionGranted = false
     private var fineLocationPermissionGranted = false
     private var emulatorHeartRateReceived = false
-    private var currentSessionId: String? = null
+    @Volatile private var currentSessionId: String? = null
     private var storageSequence = 0L
     private var bootToEpochOffsetMillis = 0L
     private var finishOnStop = true
@@ -294,7 +294,12 @@ class SensorCaptureManager(
         fineLocationPermissionGranted: Boolean,
         sessionId: String? = null,
     ) {
-        if (captureRequested) return
+        if (captureRequested) {
+            if (!sessionId.isNullOrBlank()) {
+                updateSessionId(sessionId)
+            }
+            return
+        }
         this.heartRatePermissionGranted = heartRatePermissionGranted
         this.activityPermissionGranted = activityPermissionGranted
         this.fineLocationPermissionGranted = fineLocationPermissionGranted
@@ -308,6 +313,22 @@ class SensorCaptureManager(
             storageSequence = nextSequence
             beginSensors()
         }
+    }
+
+    fun updateSessionId(newSessionId: String) {
+        if (newSessionId.isBlank() || currentSessionId == newSessionId) return
+        val previousSessionId = currentSessionId
+        currentSessionId = newSessionId
+        if (previousSessionId != null) {
+            temporaryStorage.finishSession(previousSessionId)
+        }
+        val generation = captureGeneration
+        temporaryStorage.beginSession(newSessionId) { nextSequence ->
+            if (generation == captureGeneration) {
+                storageSequence = nextSequence
+            }
+        }
+        updateState { it.copy(status = "Session synced with phone") }
     }
 
     private fun beginSensors() {
