@@ -19,7 +19,7 @@ class ValidationHandlerTest {
 
         assertEquals(0.0, validated.filterIsInstance<RawReading.HeartRate>().single().beatsPerMinute, 0.0)
         assertEquals(4.0, validated.filterIsInstance<RawReading.Velocity>().single().value, 0.0)
-        assertEquals(3L, validated.filterIsInstance<RawReading.StepCounter>().single().stepsPerSecond)
+        assertEquals(3.0, validated.filterIsInstance<RawReading.StepCounter>().single().stepsPerSecond, 0.0)
     }
 
     @Test
@@ -41,7 +41,7 @@ class ValidationHandlerTest {
         add(RawReading.HeartRate(location?.timestampMillis ?: 1_000, 140.0))
         add(RawReading.Acceleration(location?.timestampMillis ?: 1_000, 1.0, 0.0, 0.0))
         add(RawReading.Velocity(location?.timestampMillis ?: 1_000, 4.0))
-        add(RawReading.StepCounter(location?.timestampMillis ?: 1_000, 3))
+        add(RawReading.StepCounter(location?.timestampMillis ?: 1_000, 3.0))
         location?.let(::add)
     }
 }

@@ -144,10 +144,19 @@ private fun DashboardContent(
         }
 
         Button(
-            onClick = if (state.hasResumableSession) onResumeRunClick else onNewRunClick,
+            onClick = onNewRunClick,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(text = if (state.hasResumableSession) "Resume Run" else "New Run")
+            Text(text = "New Activity")
+        }
+
+        if (state.hasResumableSession) {
+            OutlinedButton(
+                onClick = onResumeRunClick,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(text = "Resume Run")
+            }
         }
 
         OutlinedButton(

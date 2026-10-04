@@ -17,4 +17,12 @@ class AnalyzingHandlerTest {
 
         assertEquals(2.0, analyzed.efficiency!!, 1e-9)
     }
+
+    @Test
+    fun usesOneAsDenominatorWithoutHistoricalBaseline() {
+        val reading = ProcessedReading(1_000, 100.0, 1.0, 4.0, 3.0)
+        val analyzed = AnalyzingHandler().analyze(reading, EfficiencyBaseline(0.0, 0.0, 0))
+
+        assertEquals(0.04, analyzed.efficiency!!, 1e-9)
+    }
 }

@@ -43,16 +43,22 @@ class NormalizingHandler {
                 )
 
                 is RawReading.StepCounter -> processedReading.copy(
-                    stepCounterPerSecond = reading.stepsPerSecond.toDouble(),
+                    stepCounterPerSecond = reading.stepsPerSecond,
                 )
 
-                is RawReading.Location -> processedReading.copy(
-                    location = ProcessedLocation(
-                        latitude = reading.latitude,
-                        longitude = reading.longitude,
-                        accuracyMeters = reading.accuracyMeters,
-                    ),
-                )
+                is RawReading.Location -> {
+                    if (reading.latitude != 0.0 || reading.longitude != 0.0) {
+                        processedReading.copy(
+                            location = ProcessedLocation(
+                                latitude = reading.latitude,
+                                longitude = reading.longitude,
+                                accuracyMeters = reading.accuracyMeters,
+                            ),
+                        )
+                    } else {
+                        processedReading
+                    }
+                }
             }
         }
 

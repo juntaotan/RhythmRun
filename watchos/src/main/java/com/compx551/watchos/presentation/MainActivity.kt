@@ -1,6 +1,10 @@
 package com.compx551.watchos.presentation
 
 import android.Manifest
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -28,7 +32,9 @@ import androidx.wear.compose.material3.lazy.transformedHeight
 import androidx.wear.compose.ui.tooling.preview.WearPreviewDevices
 import com.compx551.watchos.presentation.theme.RhythmRunTheme
 import com.compx551.watchos.permissions.HeartRatePermission
+import com.compx551.watchos.communication.RhythmProtocol
 import com.compx551.watchos.communication.WatchDataSender
+import com.compx551.watchos.communication.WatchSessionCommandService
 import com.compx551.watchos.sensors.CapturePhase
 import com.compx551.watchos.sensors.SensorCaptureManager
 import com.compx551.watchos.sensors.SensorCaptureState
@@ -39,7 +45,17 @@ class MainActivity : ComponentActivity() {
     private var captureState by mutableStateOf(SensorCaptureState())
     private var permissionMessage by mutableStateOf<String?>(null)
     private var showExerciseHistory by mutableStateOf(false)
+    private var pendingSessionId: String? = null
+    private var pendingResumeSessionId: String? = null
     private lateinit var sensorCaptureManager: SensorCaptureManager
+
+    private val commandReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val path = intent?.getStringExtra(WatchSessionCommandService.EXTRA_PATH)
+            val sessionId = intent?.getStringExtra(WatchSessionCommandService.EXTRA_SESSION_ID)
+            handleSessionCommand(path, sessionId)
+        }
+    }
 
     private val heartRatePermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {
@@ -53,31 +69,89 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val temporaryStorage = TemporarySessionStorage(this)
         val watchDataSender = WatchDataSender(this)
         sensorCaptureManager =
-            SensorCaptureManager(this, temporaryStorage, watchDataSender) { captureState = it }
+            SensorCaptureManager(this, temporaryStorage, watchDataSender) {
+                captureState = it
+                if (it.phase == CapturePhase.IDLE) {
+                    pendingResumeSessionId?.let { id ->
+                        pendingResumeSessionId = null
+                        requestPermissionsAndStart(id)
+                    }
+                }
+            }
+
+        ContextCompat.registerReceiver(
+            this,
+            commandReceiver,
+            IntentFilter(WatchSessionCommandService.ACTION_SESSION_COMMAND),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+
         setContent {
             WearApp(
                 state = captureState,
                 permissionMessage = permissionMessage,
-                onStart = ::requestPermissionsAndStart,
-                onStop = sensorCaptureManager::stopCapture,
                 showExerciseHistory = showExerciseHistory,
                 onViewExerciseHistory = { showExerciseHistory = true },
                 onCloseExerciseHistory = { showExerciseHistory = false },
             )
         }
+
+        val path = intent?.getStringExtra(WatchSessionCommandService.EXTRA_PATH)
+        val sessionId = intent?.getStringExtra(WatchSessionCommandService.EXTRA_SESSION_ID)
+        handleSessionCommand(path, sessionId)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val path = intent.getStringExtra(WatchSessionCommandService.EXTRA_PATH)
+        val sessionId = intent.getStringExtra(WatchSessionCommandService.EXTRA_SESSION_ID)
+        handleSessionCommand(path, sessionId)
     }
 
     override fun onDestroy() {
+        unregisterReceiver(commandReceiver)
         sensorCaptureManager.release()
         super.onDestroy()
     }
 
-    private fun requestPermissionsAndStart() {
+    private fun handleSessionCommand(path: String?, sessionId: String? = null) {
+        if (!sessionId.isNullOrBlank()) {
+            pendingSessionId = sessionId
+        }
+        when (path) {
+            RhythmProtocol.SESSION_START_PATH, RhythmProtocol.SESSION_RESUME_PATH -> {
+                if (captureState.phase == CapturePhase.IDLE) {
+                    requestPermissionsAndStart(sessionId)
+                } else if (path == RhythmProtocol.SESSION_RESUME_PATH && captureState.phase == CapturePhase.STOPPING) {
+                    pendingResumeSessionId = sessionId
+                } else if (captureState.phase != CapturePhase.STOPPING && !sessionId.isNullOrBlank()) {
+                    sensorCaptureManager.updateSessionId(sessionId)
+                }
+            }
+            RhythmProtocol.SESSION_PAUSE_PATH -> {
+                pendingResumeSessionId = null
+                if (captureState.phase != CapturePhase.IDLE) {
+                    sensorCaptureManager.pauseCapture()
+                }
+            }
+            RhythmProtocol.SESSION_STOP_PATH -> {
+                pendingResumeSessionId = null
+                sensorCaptureManager.stopCapture()
+            }
+        }
+    }
+
+    private fun requestPermissionsAndStart(sessionId: String? = pendingSessionId) {
+        if (!sessionId.isNullOrBlank()) {
+            pendingSessionId = sessionId
+        }
         if (HeartRatePermission.isGranted(this)) {
-            requestRemainingPermissionsAndStart()
+            requestRemainingPermissionsAndStart(sessionId)
             return
         }
 
@@ -90,16 +164,17 @@ class MainActivity : ComponentActivity() {
         heartRatePermissionLauncher.launch(HeartRatePermission.permissionForCurrentDevice())
     }
 
-    private fun requestRemainingPermissionsAndStart() {
+    private fun requestRemainingPermissionsAndStart(sessionId: String? = pendingSessionId) {
         val missing = nonHeartRatePermissions().filterNot(::isPermissionGranted)
         if (missing.isEmpty()) {
-            startWithCurrentPermissions()
+            startWithCurrentPermissions(sessionId)
         } else {
             sensorPermissionLauncher.launch(missing.toTypedArray())
         }
     }
 
-    private fun startWithCurrentPermissions() {
+    private fun startWithCurrentPermissions(sessionId: String? = pendingSessionId) {
+        val targetSessionId = sessionId ?: pendingSessionId
         val heartRateGranted = HeartRatePermission.isGranted(this)
         val activityGranted = isPermissionGranted(Manifest.permission.ACTIVITY_RECOGNITION)
         val locationGranted = isPermissionGranted(Manifest.permission.ACCESS_FINE_LOCATION)
@@ -117,6 +192,7 @@ class MainActivity : ComponentActivity() {
             heartRatePermissionGranted = heartRateGranted,
             activityPermissionGranted = activityGranted,
             fineLocationPermissionGranted = locationGranted,
+            sessionId = targetSessionId,
         )
     }
 
@@ -136,8 +212,6 @@ class MainActivity : ComponentActivity() {
 fun WearApp(
     state: SensorCaptureState,
     permissionMessage: String?,
-    onStart: () -> Unit,
-    onStop: () -> Unit,
     showExerciseHistory: Boolean,
     onViewExerciseHistory: () -> Unit,
     onCloseExerciseHistory: () -> Unit,
@@ -232,17 +306,6 @@ fun WearApp(
                                 state.unavailableMetrics.joinToString(),
                                 transformationSpec,
                             )
-                        }
-                    }
-                    item {
-                        Button(
-                            onClick =
-                                if (state.phase == CapturePhase.IDLE) onStart else onStop,
-                            modifier =
-                                Modifier.fillMaxWidth().transformedHeight(this, transformationSpec),
-                            transformation = SurfaceTransformation(transformationSpec),
-                        ) {
-                            Text(if (state.phase == CapturePhase.IDLE) "Start capture" else "Stop capture")
                         }
                     }
                     item {
@@ -343,8 +406,6 @@ fun DefaultPreview() {
     WearApp(
         state = SensorCaptureState(),
         permissionMessage = null,
-        onStart = {},
-        onStop = {},
         showExerciseHistory = false,
         onViewExerciseHistory = {},
         onCloseExerciseHistory = {},

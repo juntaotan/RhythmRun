@@ -6,7 +6,7 @@ This document is the shared interface between the Wear OS module, the phone comm
 
 - `sessionId`: a UUID string generated once when a session starts. All records in the same session use the same value.
 - `timestamp`: `System.currentTimeMillis()` stored as a `Long`. It is the wall-clock time of the reading on the watch.
-- `sequence`: a `Long` starting at `0` and increasing by one for each batch of each data type.
+- `sequence`: a `Long` starting at `0` and increasing for each reading in a session. It continues across pause and resume.
 - `batchIndex`: the zero-based batch number in the Data Layer path.
 - `dataType`: the type of the record, such as `accel`, `gyro`, `hr`, or `steps`.
 
@@ -128,7 +128,7 @@ The stable deduplication key is:
 sessionId + ":" + dataType + ":" + sequence
 ```
 
-The phone must ignore a record with a key already stored in Room. A sequence gap must be marked as missing data. Records arriving after reconnection are valid and must be merged into the same session.
+The phone must ignore a record with a key already stored in Room. Cadence coverage is calculated from timed reading windows because different data types share the session sequence. Records arriving after reconnection are valid and must be merged into the same session.
 
 `DataClient` is the persisted/offline data channel. A transient `MessageClient` preview may be added for a more responsive live dashboard, but it must not replace the saved DataClient records.
 

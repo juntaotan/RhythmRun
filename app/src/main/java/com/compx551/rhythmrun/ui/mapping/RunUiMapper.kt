@@ -71,11 +71,11 @@ fun RunRecord.toHistorySessionUiModel(): HistorySessionUiModel {
 fun buildDashboardUiState(
     records: List<RunRecord>,
     hasActiveSession: Boolean = false,
+    watchConnectionStatus: WatchConnectionStatus,
 ): DashboardUiState {
     val latest = records.maxByOrNull(RunRecord::startEpochMillis)
     return DashboardUiState(
-        // Member 2 will replace this with the real Data Layer connection status.
-        watchConnectionStatus = WatchConnectionStatus.Disconnected,
+        watchConnectionStatus = watchConnectionStatus,
         hasResumableSession = hasActiveSession,
         lastRun = latest?.let { record ->
             LastRunUiModel(
@@ -121,13 +121,17 @@ fun buildHistoryUiState(
         while (size % 7 != 0) add(CalendarDayUiModel(dayOfMonth = null))
     }
 
-    val latestDay = monthRecords.mapNotNull { parseDate(it.startLocalDate)?.day }
-        .maxOrNull()
-        ?: 1
-    val weeklyRecords = monthRecords.filter { record ->
-        val day = parseDate(record.startLocalDate)?.day ?: return@filter false
-        day in (latestDay - 6).coerceAtLeast(1)..latestDay
-    }
+    val latestDay = monthRecords.mapNotNull { parseDate(it.startLocalDate)?.day }.maxOrNull()
+    val weeklyRecords = latestDay?.let { day ->
+        calendar.set(year, month - 1, day)
+        val endDate = String.format(Locale.US, "%04d-%02d-%02d", year, month, day)
+        calendar.add(Calendar.DAY_OF_MONTH, -6)
+        val startDate = String.format(
+            Locale.US, "%04d-%02d-%02d",
+            calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH) + 1, calendar.get(Calendar.DAY_OF_MONTH),
+        )
+        records.filter { it.startLocalDate in startDate..endDate }
+    }.orEmpty()
     val visibleRecords = monthRecords
         .filter { selectedDay == null || parseDate(it.startLocalDate)?.day == selectedDay }
         .sortedByDescending(RunRecord::startEpochMillis)

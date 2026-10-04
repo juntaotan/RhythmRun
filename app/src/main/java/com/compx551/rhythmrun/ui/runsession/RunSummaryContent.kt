@@ -130,7 +130,7 @@ fun RunSummaryContent(
                     SummaryLine("Target adherence", percentOrUnavailable(state.targetAdherencePercent))
                     SummaryLine("Rhythm stability", percentOrUnavailable(state.rhythmStabilityPercent))
                     SummaryLine("Cue coverage", percentOrUnavailable(state.cueCoveragePercent))
-                    SummaryLine("Data coverage", percentOrUnavailable(state.dataCoveragePercent))
+                    SummaryLine("Cadence coverage", percentOrUnavailable(state.dataCoveragePercent))
                     SummaryLine(
                         "Movement magnitude",
                         state.averageMovementMagnitude?.let { "${formatOneDecimal(it)} m/s²" }

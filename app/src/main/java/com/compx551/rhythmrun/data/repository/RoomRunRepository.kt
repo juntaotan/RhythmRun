@@ -25,9 +25,13 @@ import com.compx551.rhythmrun.domain.model.RunStageResult
 import com.compx551.rhythmrun.domain.model.StageChangeRecord
 import com.compx551.rhythmrun.domain.model.StoredSensorType
 import com.compx551.rhythmrun.domain.repository.RunRepository
+import com.compx551.rhythmrun.processing.RunSummaryCalculator
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
@@ -37,9 +41,10 @@ import kotlinx.coroutines.launch
 
 class RoomRunRepository(
     database: PhoneRoomDatabase,
-    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) : RunRepository {
     private val dao = database.phoneRunDao()
+    private val refreshJobs = ConcurrentHashMap<String, Job>()
 
     init {
         scope.launch {
@@ -191,6 +196,19 @@ class RoomRunRepository(
                 )
             },
         )
+        val changedSession = batch.rawReadings.firstOrNull {
+            it.sensorType in setOf(StoredSensorType.HeartRate, StoredSensorType.StepCadence, StoredSensorType.StepCount)
+        }?.sessionId ?: batch.stageChanges.lastOrNull()?.sessionId
+        changedSession?.let { sessionId ->
+            refreshJobs.remove(sessionId)?.cancel()
+            refreshJobs[sessionId] = scope.launch {
+                delay(750)
+                val session = dao.findSession(sessionId) ?: return@launch
+                if (session.state !in setOf(RunSessionState.Completed.name, RunSessionState.StoppedEarly.name)) return@launch
+                val record = loadRecord(session) ?: return@launch
+                upsert(RunSummaryCalculator.update(record, rawReadings(sessionId), stageChanges(sessionId)))
+            }
+        }
     }
 
     override suspend fun upsert(record: RunRecord) {
@@ -223,6 +241,11 @@ class RoomRunRepository(
         val session = dao.findSession(sessionId) ?: return null
         return loadRecord(session)
     }
+
+    override suspend fun previousRuns(beforeStartEpochMillis: Long): List<RunRecord> =
+        dao.observeSessions().first()
+            .filter { it.startEpochMillis < beforeStartEpochMillis && !it.sessionId.startsWith("sample-session-") }
+            .mapNotNull { loadRecord(it) }
 
     override suspend fun rawReadings(sessionId: String): List<RawSensorRecord> =
         dao.findRawReadings(sessionId).map { reading ->

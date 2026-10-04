@@ -2,15 +2,30 @@ package com.compx551.rhythmrun.communication
 
 import android.content.Intent
 import android.util.Log
+import com.compx551.rhythmrun.data.local.PhoneRoomDatabase
+import com.compx551.rhythmrun.data.repository.RoomRunRepository
+import com.compx551.rhythmrun.domain.model.LocationFixRecord
+import com.compx551.rhythmrun.domain.model.RawSensorRecord
+import com.compx551.rhythmrun.domain.model.RunDataBatch
+import com.compx551.rhythmrun.domain.model.StoredSensorType
+import com.compx551.rhythmrun.location.PhoneLocationService
 import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.DataMap
 import com.google.android.gms.wearable.DataMapItem
+import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.WearableListenerService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /** Receives, validates and exposes persisted watch readings while the phone UI is closed. */
 class RhythmDataListenerService : WearableListenerService() {
-    private val lastSequenceByType = mutableMapOf<String, Long>()
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val repository by lazy {
+        RoomRunRepository(PhoneRoomDatabase.getInstance(applicationContext))
+    }
 
     override fun onDataChanged(dataEvents: DataEventBuffer) {
         dataEvents
@@ -19,20 +34,187 @@ class RhythmDataListenerService : WearableListenerService() {
                 val dataType = RhythmProtocol.dataType(event.dataItem.uri.path) ?: return@forEach
                 val reading = decode(dataType, DataMapItem.fromDataItem(event.dataItem).dataMap)
                     ?: return@forEach
-                val recordKey = "${reading.sessionId}:${reading.dataType}:${reading.sequence}"
-                if (!remember(recordKey)) return@forEach
-
-                val previousSequence = lastSequenceByType[reading.dataType]
-                val missingFrom = previousSequence?.plus(1)?.takeIf { reading.sequence > it }
-                val missingTo = missingFrom?.let { reading.sequence - 1 }
-                lastSequenceByType[reading.dataType] = maxOf(
-                    reading.sequence,
-                    previousSequence ?: reading.sequence,
-                )
-
-                readingListener?.invoke(reading)
-                sendBroadcast(reading.toIntent(missingFrom, missingTo).setPackage(packageName))
+                processReading(reading)
             }
+    }
+
+    override fun onMessageReceived(event: MessageEvent) {
+        val pathParts = event.path.split('/')
+        if (pathParts.size < 6) return
+        val dataType = pathParts[3]
+        val sessionId = pathParts[4]
+        val sequence = pathParts[5].toLongOrNull() ?: return
+
+        val payloadStr = String(event.data, Charsets.UTF_8)
+        val parts = payloadStr.split(';')
+        if (parts.size < 2) return
+        val timestamp = parts[0].toLongOrNull() ?: return
+        val params = parts[1].split(',')
+
+        val reading = when (dataType) {
+            "accel" -> RhythmReading(
+                dataType = dataType,
+                sessionId = sessionId,
+                sequence = sequence,
+                timestamp = timestamp,
+                accelerationX = params.getOrNull(0)?.toFloatOrNull(),
+                accelerationY = params.getOrNull(1)?.toFloatOrNull(),
+                accelerationZ = params.getOrNull(2)?.toFloatOrNull(),
+            )
+            "gyro" -> RhythmReading(
+                dataType = dataType,
+                sessionId = sessionId,
+                sequence = sequence,
+                timestamp = timestamp,
+                gyroscopeX = params.getOrNull(0)?.toFloatOrNull(),
+                gyroscopeY = params.getOrNull(1)?.toFloatOrNull(),
+                gyroscopeZ = params.getOrNull(2)?.toFloatOrNull(),
+            )
+            "hr" -> RhythmReading(
+                dataType = dataType,
+                sessionId = sessionId,
+                sequence = sequence,
+                timestamp = timestamp,
+                heartRateBpm = params.getOrNull(0)?.toFloatOrNull(),
+                heartRateAvailable = params.getOrNull(1)?.toBooleanStrictOrNull() ?: true,
+                heartRateSource = params.getOrNull(2),
+            )
+            "steps" -> RhythmReading(
+                dataType = dataType,
+                sessionId = sessionId,
+                sequence = sequence,
+                timestamp = timestamp,
+                stepCount = params.getOrNull(0)?.toLongOrNull(),
+                stepSource = params.getOrNull(1),
+            )
+            "cadence" -> RhythmReading(
+                dataType = dataType,
+                sessionId = sessionId,
+                sequence = sequence,
+                timestamp = timestamp,
+                cadenceStepsPerMinute = params.getOrNull(0)?.toFloatOrNull(),
+                cadenceSource = params.getOrNull(1),
+                cadenceConfidence = params.getOrNull(2)?.toFloatOrNull(),
+            )
+            "location" -> RhythmReading(
+                dataType = dataType,
+                sessionId = sessionId,
+                sequence = sequence,
+                timestamp = timestamp,
+                latitude = params.getOrNull(0)?.toDoubleOrNull(),
+                longitude = params.getOrNull(1)?.toDoubleOrNull(),
+                accuracyMeters = params.getOrNull(2)?.toDoubleOrNull(),
+            )
+            else -> return
+        }
+
+        if (isValid(reading)) {
+            processReading(reading)
+        }
+    }
+
+    private fun processReading(reading: RhythmReading) {
+        if (reading.dataType == "location" &&
+            PhoneLocationService.isPhoneRouteSession(this, reading.sessionId)
+        ) return
+        val recordKey = "${reading.sessionId}:${reading.dataType}:${reading.sequence}"
+        if (!remember(recordKey)) return
+
+        serviceScope.launch {
+            repository.persistBatch(reading.toRunDataBatch())
+        }
+
+        readingListener?.invoke(reading)
+        sendBroadcast(reading.toIntent().setPackage(packageName))
+    }
+
+    private fun RhythmReading.toRunDataBatch(): RunDataBatch = when (dataType) {
+        "accel" -> RunDataBatch(
+            rawReadings = listOf(
+                RawSensorRecord(
+                    sessionId = sessionId,
+                    sensorType = StoredSensorType.Accelerometer,
+                    sequence = sequence,
+                    timestampEpochMillis = timestamp,
+                    x = accelerationX?.toDouble(),
+                    y = accelerationY?.toDouble(),
+                    z = accelerationZ?.toDouble(),
+                    unit = "m/s^2",
+                    available = true,
+                )
+            )
+        )
+        "gyro" -> RunDataBatch(
+            rawReadings = listOf(
+                RawSensorRecord(
+                    sessionId = sessionId,
+                    sensorType = StoredSensorType.Gyroscope,
+                    sequence = sequence,
+                    timestampEpochMillis = timestamp,
+                    x = gyroscopeX?.toDouble(),
+                    y = gyroscopeY?.toDouble(),
+                    z = gyroscopeZ?.toDouble(),
+                    unit = "rad/s",
+                    available = true,
+                )
+            )
+        )
+        "hr" -> RunDataBatch(
+            rawReadings = listOf(
+                RawSensorRecord(
+                    sessionId = sessionId,
+                    sensorType = StoredSensorType.HeartRate,
+                    sequence = sequence,
+                    timestampEpochMillis = timestamp,
+                    scalarValue = heartRateBpm?.toDouble(),
+                    unit = "bpm",
+                    source = heartRateSource,
+                    available = heartRateAvailable,
+                )
+            )
+        )
+        "steps" -> RunDataBatch(
+            rawReadings = listOf(
+                RawSensorRecord(
+                    sessionId = sessionId,
+                    sensorType = StoredSensorType.StepCount,
+                    sequence = sequence,
+                    timestampEpochMillis = timestamp,
+                    scalarValue = stepCount?.toDouble(),
+                    unit = "steps",
+                    source = stepSource,
+                    available = true,
+                )
+            )
+        )
+        "cadence" -> RunDataBatch(
+            rawReadings = listOf(
+                RawSensorRecord(
+                    sessionId = sessionId,
+                    sensorType = StoredSensorType.StepCadence,
+                    sequence = sequence,
+                    timestampEpochMillis = timestamp,
+                    scalarValue = cadenceStepsPerMinute?.toDouble(),
+                    unit = "spm",
+                    source = cadenceSource,
+                    available = true,
+                )
+            )
+        )
+        "location" -> RunDataBatch(
+            locationFixes = listOf(
+                LocationFixRecord(
+                    sessionId = sessionId,
+                    sequence = sequence,
+                    timestampEpochMillis = timestamp,
+                    latitude = latitude,
+                    longitude = longitude,
+                    accuracyMetres = accuracyMeters,
+                    available = true,
+                )
+            )
+        )
+        else -> RunDataBatch()
     }
 
     private fun decode(dataType: String, map: DataMap): RhythmReading? {
@@ -128,14 +310,12 @@ class RhythmDataListenerService : WearableListenerService() {
         true
     }
 
-    private fun RhythmReading.toIntent(missingFrom: Long?, missingTo: Long?): Intent =
+    private fun RhythmReading.toIntent(): Intent =
         Intent(ACTION_SAMPLE_RECEIVED).apply {
             putExtra(EXTRA_DATA_TYPE, dataType)
             putExtra(EXTRA_SESSION_ID, sessionId)
             putExtra(EXTRA_SEQUENCE, sequence)
             putExtra(EXTRA_TIMESTAMP, timestamp)
-            missingFrom?.let { putExtra(EXTRA_MISSING_FROM, it) }
-            missingTo?.let { putExtra(EXTRA_MISSING_TO, it) }
             accelerationX?.let { putExtra(EXTRA_ACCEL_X, it) }
             accelerationY?.let { putExtra(EXTRA_ACCEL_Y, it) }
             accelerationZ?.let { putExtra(EXTRA_ACCEL_Z, it) }
@@ -160,6 +340,7 @@ class RhythmDataListenerService : WearableListenerService() {
     }
 
     companion object {
+        @Volatile
         var readingListener: ((RhythmReading) -> Unit)? = null
 
         const val ACTION_SAMPLE_RECEIVED = "com.compx551.rhythmrun.SAMPLE_RECEIVED"
@@ -167,8 +348,6 @@ class RhythmDataListenerService : WearableListenerService() {
         const val EXTRA_DATA_TYPE = "data_type"
         const val EXTRA_SEQUENCE = "sequence"
         const val EXTRA_TIMESTAMP = "timestamp"
-        const val EXTRA_MISSING_FROM = "missing_sequence_from"
-        const val EXTRA_MISSING_TO = "missing_sequence_to"
         const val EXTRA_ACCEL_X = "accelerometer_x"
         const val EXTRA_ACCEL_Y = "accelerometer_y"
         const val EXTRA_ACCEL_Z = "accelerometer_z"

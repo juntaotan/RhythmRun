@@ -6,9 +6,11 @@ import com.google.android.gms.wearable.DataMap
 import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
 
-/** Serialises sensor readings and stores them in the persistent Wear Data Layer. */
+/** Transmits sensor readings using dual-channel (fixed-path DataClient + MessageClient) for maximum reliability. */
 class WatchDataSender(context: Context) {
     private val dataClient = Wearable.getDataClient(context.applicationContext)
+    private val messageClient = Wearable.getMessageClient(context.applicationContext)
+    private val nodeClient = Wearable.getNodeClient(context.applicationContext)
 
     fun sendAcceleration(
         sessionId: String,
@@ -17,7 +19,7 @@ class WatchDataSender(context: Context) {
         x: Float,
         y: Float,
         z: Float,
-    ) = put(RhythmProtocol.ACCEL_PATH_PREFIX, sessionId, sequence) {
+    ) = send(RhythmProtocol.ACCEL_PATH_PREFIX, sessionId, sequence, timestampEpochMillis, "$x,$y,$z") {
         putCommon(sessionId, sequence, timestampEpochMillis)
         putFloat(RhythmProtocol.ACCEL_X, x)
         putFloat(RhythmProtocol.ACCEL_Y, y)
@@ -31,7 +33,7 @@ class WatchDataSender(context: Context) {
         x: Float,
         y: Float,
         z: Float,
-    ) = put(RhythmProtocol.GYRO_PATH_PREFIX, sessionId, sequence) {
+    ) = send(RhythmProtocol.GYRO_PATH_PREFIX, sessionId, sequence, timestampEpochMillis, "$x,$y,$z") {
         putCommon(sessionId, sequence, timestampEpochMillis)
         putFloat(RhythmProtocol.GYRO_X, x)
         putFloat(RhythmProtocol.GYRO_Y, y)
@@ -44,7 +46,7 @@ class WatchDataSender(context: Context) {
         timestampEpochMillis: Long,
         beatsPerMinute: Double,
         source: String,
-    ) = put(RhythmProtocol.HEART_RATE_PATH_PREFIX, sessionId, sequence) {
+    ) = send(RhythmProtocol.HEART_RATE_PATH_PREFIX, sessionId, sequence, timestampEpochMillis, "$beatsPerMinute,true,$source") {
         putCommon(sessionId, sequence, timestampEpochMillis)
         putBoolean(RhythmProtocol.HEART_RATE_AVAILABLE, true)
         putFloat(RhythmProtocol.HEART_RATE, beatsPerMinute.toFloat())
@@ -57,7 +59,7 @@ class WatchDataSender(context: Context) {
         timestampEpochMillis: Long,
         cumulativeSteps: Long,
         source: String,
-    ) = put(RhythmProtocol.STEPS_PATH_PREFIX, sessionId, sequence) {
+    ) = send(RhythmProtocol.STEPS_PATH_PREFIX, sessionId, sequence, timestampEpochMillis, "$cumulativeSteps,$source") {
         putCommon(sessionId, sequence, timestampEpochMillis)
         putLong(RhythmProtocol.STEP_COUNT, cumulativeSteps)
         putString(RhythmProtocol.STEP_SOURCE, source)
@@ -69,7 +71,7 @@ class WatchDataSender(context: Context) {
         timestampEpochMillis: Long,
         stepsPerMinute: Long,
         source: String,
-    ) = put(RhythmProtocol.CADENCE_PATH_PREFIX, sessionId, sequence) {
+    ) = send(RhythmProtocol.CADENCE_PATH_PREFIX, sessionId, sequence, timestampEpochMillis, "$stepsPerMinute,$source,1.0") {
         putCommon(sessionId, sequence, timestampEpochMillis)
         putFloat(RhythmProtocol.CADENCE, stepsPerMinute.toFloat())
         putString(RhythmProtocol.CADENCE_SOURCE, source)
@@ -83,23 +85,35 @@ class WatchDataSender(context: Context) {
         latitudeDegrees: Double,
         longitudeDegrees: Double,
         horizontalAccuracyMetres: Double?,
-    ) = put(RhythmProtocol.LOCATION_PATH_PREFIX, sessionId, sequence) {
+    ) = send(RhythmProtocol.LOCATION_PATH_PREFIX, sessionId, sequence, timestampEpochMillis, "$latitudeDegrees,$longitudeDegrees,${horizontalAccuracyMetres ?: 0.0}") {
         putCommon(sessionId, sequence, timestampEpochMillis)
         putDouble(RhythmProtocol.LATITUDE, latitudeDegrees)
         putDouble(RhythmProtocol.LONGITUDE, longitudeDegrees)
         horizontalAccuracyMetres?.let { putDouble(RhythmProtocol.ACCURACY, it) }
     }
 
-    private fun put(
+    private fun send(
         prefix: String,
         sessionId: String,
         sequence: Long,
-        fill: DataMap.() -> Unit,
+        timestamp: Long,
+        payloadStr: String,
+        fillMap: DataMap.() -> Unit,
     ) {
-        val request = PutDataMapRequest.create(RhythmProtocol.path(prefix, sessionId, sequence))
-        request.dataMap.fill()
-        dataClient.putDataItem(request.asPutDataRequest())
-            .addOnFailureListener { error -> Log.e(TAG, "Unable to enqueue Data Layer item", error) }
+        // 1. Channel A: Unique sequence path DataClient item for reliable offline buffering and auto-sync
+        val dataPath = RhythmProtocol.path(prefix, sessionId, sequence)
+        val request = PutDataMapRequest.create(dataPath)
+        request.dataMap.fillMap()
+        dataClient.putDataItem(request.asPutDataRequest().setUrgent())
+            .addOnFailureListener { Log.e(TAG, "DataClient error for $dataPath", it) }
+
+        // 2. Channel B: MessageClient direct message for low-latency live streaming when nodes are connected
+        val bytes = "$timestamp;$payloadStr".toByteArray(Charsets.UTF_8)
+        nodeClient.connectedNodes.addOnSuccessListener { nodes ->
+            nodes.forEach { node ->
+                messageClient.sendMessage(node.id, dataPath, bytes)
+            }
+        }
     }
 
     private fun DataMap.putCommon(

@@ -9,17 +9,16 @@ class AnalyzingHandler {
     fun analyze(
         reading: ProcessedReading,
         baseline: EfficiencyBaseline,
-    ): ProcessedReading = reading.copy(
-        efficiency = if (reading.heartRateBpm > 0.0 &&
-            baseline.averageSpeedMetersPerSecond > 0.0 &&
-            baseline.averageHeartRateBpm > 0.0
-        ) {
-            (reading.velocityMetersPerSecond / reading.heartRateBpm) /
-                (baseline.averageSpeedMetersPerSecond / baseline.averageHeartRateBpm)
-        } else {
-            0.0
-        },
-    )
+    ): ProcessedReading {
+        val denominator = if (baseline.historyCount == 0) 1.0 else baseline.speedHeartRateRatio
+        return reading.copy(
+            efficiency = if (reading.heartRateBpm > 0.0 && denominator > 0.0) {
+                (reading.velocityMetersPerSecond / reading.heartRateBpm) / denominator
+            } else {
+                0.0
+            },
+        )
+    }
 }
 
 data class HistoricalRunAverage(
