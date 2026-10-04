@@ -32,6 +32,7 @@ import com.compx551.rhythmrun.ui.runsession.RunSessionUiMode
 import com.compx551.rhythmrun.ui.runsession.RunSessionUiState
 import com.compx551.rhythmrun.ui.runsession.createInitialRunSessionUiState
 import com.compx551.rhythmrun.communication.RhythmDataListenerService
+import com.compx551.rhythmrun.communication.RhythmReading
 import com.compx551.rhythmrun.communication.SessionCommandClient
 import com.compx551.rhythmrun.processing.LiveRunProcessor
 import com.compx551.rhythmrun.processing.model.ProcessedReading
@@ -39,6 +40,7 @@ import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,6 +58,7 @@ class RhythmRunViewModel(
 ) : ViewModel() {
     private var liveRunProcessor: LiveRunProcessor? = null
     private var timerJob: Job? = null
+    private var processedReadingsJob: Job? = null
     private var activeRunStartedAtMillis: Long? = null
     private val initialCalendar = Calendar.getInstance(timeZone)
     private val selectedMonth = MutableStateFlow(
@@ -106,6 +109,28 @@ class RhythmRunViewModel(
         ),
     )
 
+    private val watchReadingListener: (RhythmReading) -> Unit = { reading ->
+        viewModelScope.launch {
+            val live = runSessionState.liveRun
+            if (live.sessionId != reading.sessionId || live.syncStatus != LiveRunSyncStatus.ReceivingData) {
+                runSessionState = runSessionState.copy(
+                    liveRun = live.copy(
+                        sessionId = reading.sessionId,
+                        syncStatus = LiveRunSyncStatus.ReceivingData,
+                    ),
+                )
+            }
+            if (liveRunProcessor == null) {
+                startLiveProcessing()
+            }
+            liveRunProcessor?.onReading(reading)
+        }
+    }
+
+    init {
+        RhythmDataListenerService.readingListener = watchReadingListener
+    }
+
     fun startNewRun() {
         activeRunStartedAtMillis = null
         runSessionState = createInitialRunSessionUiState()
@@ -117,7 +142,7 @@ class RhythmRunViewModel(
         val stages = plan.stages.sortedBy { it.order }.map { stage ->
             com.compx551.rhythmrun.ui.runsession.StagePlanUiState(
                 stage = stage.stage,
-                durationMinutesInput = (stage.durationSeconds / 60L).toString(),
+                durationMinutesInput = formatMinutesInput(stage.durationSeconds),
                 targetCadenceSpmInput = stage.targetCadenceSpm?.toString(),
             )
         }
@@ -130,7 +155,7 @@ class RhythmRunViewModel(
                 sessionId = plan.sessionId,
                 currentStage = current.stage,
                 currentStageNumber = 1,
-                stageDurationSeconds = (current.durationMinutesInput.toLongOrNull() ?: 0L) * 60L,
+                stageDurationSeconds = durationMinutesToSeconds(current.durationMinutesInput),
                 isPaused = plan.state == RunSessionState.Paused,
                 syncStatus = LiveRunSyncStatus.WaitingForWatch,
             ),
@@ -139,11 +164,13 @@ class RhythmRunViewModel(
     }
 
     fun updateDuration(stage: RunStage, value: String) {
-        if (!value.all(Char::isDigit)) return
+        val normalized = value.replace(',', '.')
+        if (normalized.count { it == '.' } > 1) return
+        if (normalized.any { !it.isDigit() && it != '.' }) return
         runSessionState = runSessionState.copy(
             stages = runSessionState.stages.map { stageState ->
                 if (stageState.stage == stage) {
-                    stageState.copy(durationMinutesInput = value)
+                    stageState.copy(durationMinutesInput = normalized)
                 } else {
                     stageState
                 }
@@ -182,7 +209,7 @@ class RhythmRunViewModel(
                 currentStage = RunStage.WarmUp,
                 currentStageNumber = 1,
                 stageElapsedSeconds = 0L,
-                stageDurationSeconds = (warmUp.durationMinutesInput.toLongOrNull() ?: 0L) * 60L,
+                stageDurationSeconds = durationMinutesToSeconds(warmUp.durationMinutesInput),
                 totalElapsedSeconds = 0L,
                 targetCadenceSpm = warmUp.targetCadenceSpmInput?.toIntOrNull(),
                 syncStatus = LiveRunSyncStatus.WaitingForWatch,
@@ -249,7 +276,8 @@ class RhythmRunViewModel(
     }
 
     private fun startLiveProcessing() {
-        stopLiveProcessing()
+        timerJob?.cancel()
+        processedReadingsJob?.cancel()
         val processor = LiveRunProcessor()
         liveRunProcessor = processor
 
@@ -260,24 +288,12 @@ class RhythmRunViewModel(
             }
         }
 
-        viewModelScope.launch {
+        processedReadingsJob = viewModelScope.launch {
             processor.processedReadings.collect { readings ->
                 readings.lastOrNull()?.let(::updateLiveMetrics)
             }
         }
-
-        RhythmDataListenerService.readingListener = { reading ->
-            val live = runSessionState.liveRun
-            if (live.sessionId != reading.sessionId || live.syncStatus != LiveRunSyncStatus.ReceivingData) {
-                runSessionState = runSessionState.copy(
-                    liveRun = live.copy(
-                        sessionId = reading.sessionId,
-                        syncStatus = LiveRunSyncStatus.ReceivingData,
-                    ),
-                )
-            }
-            processor.onReading(reading)
-        }
+        RhythmDataListenerService.readingListener = watchReadingListener
     }
 
     private fun advanceTimer() {
@@ -291,7 +307,7 @@ class RhythmRunViewModel(
             val nextStageNum = live.currentStageNumber + 1
             if (nextStageNum <= runSessionState.stages.size) {
                 val nextStagePlan = runSessionState.stages[nextStageNum - 1]
-                val nextDuration = (nextStagePlan.durationMinutesInput.toLongOrNull() ?: 0L) * 60L
+                val nextDuration = durationMinutesToSeconds(nextStagePlan.durationMinutesInput)
                 runSessionState = runSessionState.copy(
                     liveRun = live.copy(
                         currentStage = nextStagePlan.stage,
@@ -327,15 +343,22 @@ class RhythmRunViewModel(
         val hr = reading.heartRateBpm.roundToInt().takeIf { it > 0 }
 
         val newLocation = reading.location?.takeIf { it.latitude != 0.0 || it.longitude != 0.0 }
-        val newRoute = if (newLocation != null) {
-            val lastPoint = currentLive.routePoints.lastOrNull()
-            if (lastPoint == null || lastPoint.latitude != newLocation.latitude || lastPoint.longitude != newLocation.longitude) {
-                currentLive.routePoints + newLocation
-            } else {
-                currentLive.routePoints
-            }
+        val lastPoint = currentLive.routePoints.lastOrNull()
+        val isNewPoint = newLocation != null && (lastPoint == null || lastPoint.latitude != newLocation.latitude || lastPoint.longitude != newLocation.longitude)
+
+        val newRoute = if (newLocation != null && isNewPoint) {
+            currentLive.routePoints + newLocation
         } else {
             currentLive.routePoints
+        }
+
+        val addedDistance = if (newLocation != null && lastPoint != null && isNewPoint) {
+            computeDistanceMeters(
+                lastPoint.latitude, lastPoint.longitude,
+                newLocation.latitude, newLocation.longitude,
+            )
+        } else {
+            0.0
         }
 
         runSessionState = runSessionState.copy(
@@ -343,6 +366,7 @@ class RhythmRunViewModel(
                 heartRateBpm = hr ?: currentLive.heartRateBpm,
                 cadenceSpm = if (cadence > 0) cadence else currentLive.cadenceSpm,
                 speedKilometresPerHour = if (speedKmh > 0) speedKmh else currentLive.speedKilometresPerHour,
+                distanceMetres = currentLive.distanceMetres + addedDistance,
                 accelerationMagnitude = reading.accelerationPerSecond.takeIf { it > 0.0 } ?: currentLive.accelerationMagnitude,
                 efficiency = reading.efficiency,
                 currentLocation = newLocation ?: currentLive.currentLocation,
@@ -352,9 +376,24 @@ class RhythmRunViewModel(
         )
     }
 
+    private fun computeDistanceMeters(
+        lat1: Double, lon1: Double,
+        lat2: Double, lon2: Double,
+    ): Double {
+        val latDelta = Math.toRadians(lat2 - lat1)
+        val lonDelta = Math.toRadians(lon2 - lon1)
+        val a = Math.sin(latDelta / 2) * Math.sin(latDelta / 2) +
+                Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+                Math.sin(lonDelta / 2) * Math.sin(lonDelta / 2)
+        val c = 2 * Math.atan2(Math.sqrt(a.coerceIn(0.0, 1.0)), Math.sqrt((1.0 - a).coerceIn(0.0, 1.0)))
+        return 6_371_000.0 * c
+    }
+
     private fun stopLiveProcessing() {
         timerJob?.cancel()
         timerJob = null
+        processedReadingsJob?.cancel()
+        processedReadingsJob = null
         RhythmDataListenerService.readingListener = null
         liveRunProcessor = null
     }
@@ -413,7 +452,7 @@ class RhythmRunViewModel(
                 RunPlanStage(
                     stage = stage.stage,
                     order = index,
-                    durationSeconds = (stage.durationMinutesInput.toLongOrNull() ?: 0L) * 60L,
+                    durationSeconds = durationMinutesToSeconds(stage.durationMinutesInput),
                     targetCadenceSpm = stage.targetCadenceSpmInput?.toIntOrNull(),
                 )
             },
@@ -424,7 +463,7 @@ class RhythmRunViewModel(
         val timestamp = activeRunStartedAtMillis ?: nowMillis()
         val calendar = Calendar.getInstance(timeZone).apply { timeInMillis = timestamp }
         val plannedDurations = state.stages.map { stage ->
-            (stage.durationMinutesInput.toLongOrNull() ?: 0L) * 60L
+            durationMinutesToSeconds(stage.durationMinutesInput)
         }
         val currentStageIndex = state.liveRun.currentStageNumber.minus(1).coerceIn(0, 3)
         val stageResults = state.stages.mapIndexed { index, stage ->
@@ -514,6 +553,20 @@ private fun localTime(calendar: Calendar): String = String.format(
     calendar.get(Calendar.HOUR_OF_DAY),
     calendar.get(Calendar.MINUTE),
 )
+
+private fun durationMinutesToSeconds(input: String): Long {
+    val minutes = input.replace(',', '.').toDoubleOrNull() ?: 0.0
+    return (minutes * 60.0).roundToLong().coerceAtLeast(0L)
+}
+
+private fun formatMinutesInput(seconds: Long): String {
+    val minutes = seconds / 60.0
+    return if (seconds % 60L == 0L) {
+        (seconds / 60L).toString()
+    } else {
+        String.format(Locale.US, "%.1f", minutes)
+    }
+}
 
 private data class MonthSelection(val year: Int, val month: Int) {
     fun previous(): MonthSelection = if (month == 1) {

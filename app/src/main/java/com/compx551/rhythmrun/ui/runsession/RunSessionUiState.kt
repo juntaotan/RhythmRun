@@ -14,7 +14,7 @@ data class StagePlanUiState(
     val targetCadenceSpmInput: String?,
 ) {
     val hasValidDuration: Boolean
-        get() = durationMinutesInput.toIntOrNull()?.let { it > 0 } == true
+        get() = durationMinutesInput.toDoubleOrNull()?.let { it > 0.0 } == true
 
     val hasValidCadence: Boolean
         get() = targetCadenceSpmInput?.toIntOrNull()?.let { it > 0 } ?: true
@@ -37,13 +37,13 @@ data class RunSessionUiState(
             return containsEveryStage && stages.all { it.isValid }
         }
 
-    val totalDurationMinutes: Int?
+    val totalDurationMinutes: Double?
         get() {
             val durations = stages.map { stage ->
-                val duration = stage.durationMinutesInput.toIntOrNull()
+                val duration = stage.durationMinutesInput.toDoubleOrNull()
                     ?: return null
 
-                if (duration <= 0) {
+                if (duration <= 0.0) {
                     return null
                 }
 

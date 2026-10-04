@@ -6,6 +6,7 @@ import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.DataMap
 import com.google.android.gms.wearable.DataMapItem
+import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.WearableListenerService
 
 /** Receives, validates and exposes persisted watch readings while the phone UI is closed. */
@@ -13,6 +14,7 @@ class RhythmDataListenerService : WearableListenerService() {
     private val lastSequenceByType = mutableMapOf<String, Long>()
 
     override fun onDataChanged(dataEvents: DataEventBuffer) {
+        val listener = readingListener
         dataEvents
             .filter { it.type == DataEvent.TYPE_CHANGED }
             .forEach { event ->
@@ -20,8 +22,99 @@ class RhythmDataListenerService : WearableListenerService() {
                 val reading = decode(dataType, DataMapItem.fromDataItem(event.dataItem).dataMap)
                     ?: return@forEach
                 val recordKey = "${reading.sessionId}:${reading.dataType}:${reading.sequence}"
-                if (!remember(recordKey)) return@forEach
 
+                if (listener != null) {
+                    if (!remember(recordKey)) return@forEach
+
+                    val previousSequence = lastSequenceByType[reading.dataType]
+                    val missingFrom = previousSequence?.plus(1)?.takeIf { reading.sequence > it }
+                    val missingTo = missingFrom?.let { reading.sequence - 1 }
+                    lastSequenceByType[reading.dataType] = maxOf(
+                        reading.sequence,
+                        previousSequence ?: reading.sequence,
+                    )
+
+                    listener.invoke(reading)
+                    sendBroadcast(reading.toIntent(missingFrom, missingTo).setPackage(packageName))
+                }
+            }
+    }
+
+    override fun onMessageReceived(event: MessageEvent) {
+        val pathParts = event.path.split('/')
+        if (pathParts.size < 6) return
+        val dataType = pathParts[3]
+        val sessionId = pathParts[4]
+        val sequence = pathParts[5].toLongOrNull() ?: return
+        val recordKey = "$sessionId:$dataType:$sequence"
+
+        val payloadStr = String(event.data, Charsets.UTF_8)
+        val parts = payloadStr.split(';')
+        if (parts.size < 2) return
+        val timestamp = parts[0].toLongOrNull() ?: return
+        val params = parts[1].split(',')
+
+        val reading = when (dataType) {
+            "accel" -> RhythmReading(
+                dataType = dataType,
+                sessionId = sessionId,
+                sequence = sequence,
+                timestamp = timestamp,
+                accelerationX = params.getOrNull(0)?.toFloatOrNull(),
+                accelerationY = params.getOrNull(1)?.toFloatOrNull(),
+                accelerationZ = params.getOrNull(2)?.toFloatOrNull(),
+            )
+            "gyro" -> RhythmReading(
+                dataType = dataType,
+                sessionId = sessionId,
+                sequence = sequence,
+                timestamp = timestamp,
+                gyroscopeX = params.getOrNull(0)?.toFloatOrNull(),
+                gyroscopeY = params.getOrNull(1)?.toFloatOrNull(),
+                gyroscopeZ = params.getOrNull(2)?.toFloatOrNull(),
+            )
+            "hr" -> RhythmReading(
+                dataType = dataType,
+                sessionId = sessionId,
+                sequence = sequence,
+                timestamp = timestamp,
+                heartRateBpm = params.getOrNull(0)?.toFloatOrNull(),
+                heartRateAvailable = params.getOrNull(1)?.toBooleanStrictOrNull() ?: true,
+                heartRateSource = params.getOrNull(2),
+            )
+            "steps" -> RhythmReading(
+                dataType = dataType,
+                sessionId = sessionId,
+                sequence = sequence,
+                timestamp = timestamp,
+                stepCount = params.getOrNull(0)?.toLongOrNull(),
+                stepSource = params.getOrNull(1),
+            )
+            "cadence" -> RhythmReading(
+                dataType = dataType,
+                sessionId = sessionId,
+                sequence = sequence,
+                timestamp = timestamp,
+                cadenceStepsPerMinute = params.getOrNull(0)?.toFloatOrNull(),
+                cadenceSource = params.getOrNull(1),
+                cadenceConfidence = params.getOrNull(2)?.toFloatOrNull(),
+            )
+            "location" -> RhythmReading(
+                dataType = dataType,
+                sessionId = sessionId,
+                sequence = sequence,
+                timestamp = timestamp,
+                latitude = params.getOrNull(0)?.toDoubleOrNull(),
+                longitude = params.getOrNull(1)?.toDoubleOrNull(),
+                accuracyMeters = params.getOrNull(2)?.toDoubleOrNull(),
+            )
+            else -> return
+        }
+
+        if (isValid(reading)) {
+            val listener = readingListener
+            if (listener != null) {
+                if (!remember(recordKey)) return
                 val previousSequence = lastSequenceByType[reading.dataType]
                 val missingFrom = previousSequence?.plus(1)?.takeIf { reading.sequence > it }
                 val missingTo = missingFrom?.let { reading.sequence - 1 }
@@ -29,10 +122,10 @@ class RhythmDataListenerService : WearableListenerService() {
                     reading.sequence,
                     previousSequence ?: reading.sequence,
                 )
-
-                readingListener?.invoke(reading)
+                listener.invoke(reading)
                 sendBroadcast(reading.toIntent(missingFrom, missingTo).setPackage(packageName))
             }
+        }
     }
 
     private fun decode(dataType: String, map: DataMap): RhythmReading? {
@@ -160,6 +253,7 @@ class RhythmDataListenerService : WearableListenerService() {
     }
 
     companion object {
+        @Volatile
         var readingListener: ((RhythmReading) -> Unit)? = null
 
         const val ACTION_SAMPLE_RECEIVED = "com.compx551.rhythmrun.SAMPLE_RECEIVED"

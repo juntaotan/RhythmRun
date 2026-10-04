@@ -29,6 +29,8 @@ class LiveRunProcessor(
     private var latestCadenceSpm: Float? = null
     private var latestLocation: Pair<Double, Double>? = null
     private var latestAccuracy: Double? = null
+    private var previousStepCount: Long? = null
+    private var previousStepTimestamp: Long? = null
 
     fun onReading(reading: RhythmReading) {
         if (currentSessionId != reading.sessionId) {
@@ -38,6 +40,8 @@ class LiveRunProcessor(
             latestCadenceSpm = null
             latestLocation = null
             latestAccuracy = null
+            previousStepCount = null
+            previousStepTimestamp = null
         }
         val ts = reading.timestamp
         reading.heartRateBpm?.let { if (it > 0f) latestHr = it.toDouble() }
@@ -49,6 +53,22 @@ class LiveRunProcessor(
             )
         }
         reading.cadenceStepsPerMinute?.let { if (it > 0f) latestCadenceSpm = it }
+        reading.stepCount?.let { currentSteps ->
+            val prevSteps = previousStepCount
+            val prevTs = previousStepTimestamp
+            if (prevSteps != null && prevTs != null && currentSteps > prevSteps && ts > prevTs) {
+                val deltaSteps = currentSteps - prevSteps
+                val deltaSeconds = (ts - prevTs) / 1000.0
+                if (deltaSeconds > 0.0) {
+                    val derivedSpm = ((deltaSteps / deltaSeconds) * 60.0).toFloat()
+                    if (derivedSpm > 0f) {
+                        latestCadenceSpm = derivedSpm
+                    }
+                }
+            }
+            previousStepCount = currentSteps
+            previousStepTimestamp = ts
+        }
         if (reading.latitude != null && reading.longitude != null) {
             latestLocation = reading.latitude to reading.longitude
             latestAccuracy = reading.accuracyMeters

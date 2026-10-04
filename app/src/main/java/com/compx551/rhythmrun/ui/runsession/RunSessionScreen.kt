@@ -132,7 +132,12 @@ private fun RunPlanContent(
                 )
                 Text(
                     text = state.totalDurationMinutes?.let { totalMinutes ->
-                        "Total planned duration: $totalMinutes min"
+                        val formatted = if (totalMinutes % 1.0 == 0.0) {
+                            totalMinutes.toInt().toString()
+                        } else {
+                            "%.1f".format(totalMinutes)
+                        }
+                        "Total planned duration: $formatted min"
                     } ?: "Complete all stage durations",
                     color = if (state.totalDurationMinutes == null) {
                         MaterialTheme.colorScheme.onSurfaceVariant
@@ -269,7 +274,7 @@ private fun StagePlanCard(
                         Text(text = "min")
                     },
                     keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
+                        keyboardType = KeyboardType.Decimal,
                     ),
                     singleLine = true,
                     isError = showDurationError,
