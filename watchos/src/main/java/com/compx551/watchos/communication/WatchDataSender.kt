@@ -100,19 +100,18 @@ class WatchDataSender(context: Context) {
         payloadStr: String,
         fillMap: DataMap.() -> Unit,
     ) {
-        // 1. Channel A: Fixed-path DataClient item (overwrites single entry, never grows storage)
-        val fixedPath = "${prefix}latest"
-        val request = PutDataMapRequest.create(fixedPath)
+        // 1. Channel A: Unique sequence path DataClient item for reliable offline buffering and auto-sync
+        val dataPath = RhythmProtocol.path(prefix, sessionId, sequence)
+        val request = PutDataMapRequest.create(dataPath)
         request.dataMap.fillMap()
         dataClient.putDataItem(request.asPutDataRequest().setUrgent())
-            .addOnFailureListener { Log.e(TAG, "DataClient error for $fixedPath", it) }
+            .addOnFailureListener { Log.e(TAG, "DataClient error for $dataPath", it) }
 
-        // 2. Channel B: MessageClient direct message for connected nodes
-        val messagePath = RhythmProtocol.path(prefix, sessionId, sequence)
+        // 2. Channel B: MessageClient direct message for low-latency live streaming when nodes are connected
         val bytes = "$timestamp;$payloadStr".toByteArray(Charsets.UTF_8)
         nodeClient.connectedNodes.addOnSuccessListener { nodes ->
             nodes.forEach { node ->
-                messageClient.sendMessage(node.id, messagePath, bytes)
+                messageClient.sendMessage(node.id, dataPath, bytes)
             }
         }
     }

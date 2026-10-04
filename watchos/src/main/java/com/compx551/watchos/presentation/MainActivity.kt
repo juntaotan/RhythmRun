@@ -45,12 +45,14 @@ class MainActivity : ComponentActivity() {
     private var captureState by mutableStateOf(SensorCaptureState())
     private var permissionMessage by mutableStateOf<String?>(null)
     private var showExerciseHistory by mutableStateOf(false)
+    private var pendingSessionId: String? = null
     private lateinit var sensorCaptureManager: SensorCaptureManager
 
     private val commandReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val path = intent?.getStringExtra(WatchSessionCommandService.EXTRA_PATH)
-            handleSessionCommand(path)
+            val sessionId = intent?.getStringExtra(WatchSessionCommandService.EXTRA_SESSION_ID)
+            handleSessionCommand(path, sessionId)
         }
     }
 
@@ -83,7 +85,7 @@ class MainActivity : ComponentActivity() {
             WearApp(
                 state = captureState,
                 permissionMessage = permissionMessage,
-                onStart = ::requestPermissionsAndStart,
+                onStart = { requestPermissionsAndStart(null) },
                 onStop = sensorCaptureManager::stopCapture,
                 showExerciseHistory = showExerciseHistory,
                 onViewExerciseHistory = { showExerciseHistory = true },
@@ -91,13 +93,17 @@ class MainActivity : ComponentActivity() {
             )
         }
 
-        handleSessionCommand(intent?.getStringExtra(WatchSessionCommandService.EXTRA_PATH))
+        val path = intent?.getStringExtra(WatchSessionCommandService.EXTRA_PATH)
+        val sessionId = intent?.getStringExtra(WatchSessionCommandService.EXTRA_SESSION_ID)
+        handleSessionCommand(path, sessionId)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handleSessionCommand(intent.getStringExtra(WatchSessionCommandService.EXTRA_PATH))
+        val path = intent.getStringExtra(WatchSessionCommandService.EXTRA_PATH)
+        val sessionId = intent.getStringExtra(WatchSessionCommandService.EXTRA_SESSION_ID)
+        handleSessionCommand(path, sessionId)
     }
 
     override fun onDestroy() {
@@ -106,11 +112,14 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    private fun handleSessionCommand(path: String?) {
+    private fun handleSessionCommand(path: String?, sessionId: String? = null) {
+        if (!sessionId.isNullOrBlank()) {
+            pendingSessionId = sessionId
+        }
         when (path) {
             RhythmProtocol.SESSION_START_PATH, RhythmProtocol.SESSION_RESUME_PATH -> {
                 if (captureState.phase == CapturePhase.IDLE) {
-                    requestPermissionsAndStart()
+                    requestPermissionsAndStart(sessionId)
                 }
             }
             RhythmProtocol.SESSION_PAUSE_PATH, RhythmProtocol.SESSION_STOP_PATH -> {
@@ -121,9 +130,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun requestPermissionsAndStart() {
+    private fun requestPermissionsAndStart(sessionId: String? = pendingSessionId) {
+        if (!sessionId.isNullOrBlank()) {
+            pendingSessionId = sessionId
+        }
         if (HeartRatePermission.isGranted(this)) {
-            requestRemainingPermissionsAndStart()
+            requestRemainingPermissionsAndStart(sessionId)
             return
         }
 
@@ -136,16 +148,17 @@ class MainActivity : ComponentActivity() {
         heartRatePermissionLauncher.launch(HeartRatePermission.permissionForCurrentDevice())
     }
 
-    private fun requestRemainingPermissionsAndStart() {
+    private fun requestRemainingPermissionsAndStart(sessionId: String? = pendingSessionId) {
         val missing = nonHeartRatePermissions().filterNot(::isPermissionGranted)
         if (missing.isEmpty()) {
-            startWithCurrentPermissions()
+            startWithCurrentPermissions(sessionId)
         } else {
             sensorPermissionLauncher.launch(missing.toTypedArray())
         }
     }
 
-    private fun startWithCurrentPermissions() {
+    private fun startWithCurrentPermissions(sessionId: String? = pendingSessionId) {
+        val targetSessionId = sessionId ?: pendingSessionId
         val heartRateGranted = HeartRatePermission.isGranted(this)
         val activityGranted = isPermissionGranted(Manifest.permission.ACTIVITY_RECOGNITION)
         val locationGranted = isPermissionGranted(Manifest.permission.ACCESS_FINE_LOCATION)
@@ -163,6 +176,7 @@ class MainActivity : ComponentActivity() {
             heartRatePermissionGranted = heartRateGranted,
             activityPermissionGranted = activityGranted,
             fineLocationPermissionGranted = locationGranted,
+            sessionId = targetSessionId,
         )
     }
 

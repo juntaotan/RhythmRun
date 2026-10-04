@@ -247,17 +247,20 @@ class TemporarySessionStorage(
         write { dao.markActiveSessionsInterrupted(System.currentTimeMillis()) }
     }
 
-    fun beginSession(startedAtEpochMillis: Long = System.currentTimeMillis()): String {
-        val sessionId = UUID.randomUUID().toString()
+    fun beginSession(
+        sessionId: String? = null,
+        startedAtEpochMillis: Long = System.currentTimeMillis(),
+    ): String {
+        val id = sessionId?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString()
         write {
             dao.insertSession(
                 TemporarySessionEntity(
-                    sessionId = sessionId,
+                    sessionId = id,
                     startedAtEpochMillis = startedAtEpochMillis,
                 ),
             )
         }
-        return sessionId
+        return id
     }
 
     fun saveAccelerometer(sessionId: String, sequence: Long, reading: AccelerationReading) =

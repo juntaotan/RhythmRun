@@ -1,6 +1,7 @@
 package com.compx551.rhythmrun.ui
 
 import android.content.Context
+import java.util.UUID
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -199,7 +200,7 @@ class RhythmRunViewModel(
         if (!runSessionState.isPlanValid) return
         val warmUp = runSessionState.stages.first { it.stage == RunStage.WarmUp }
         val startedAt = nowMillis()
-        val sessionId = "local-$startedAt"
+        val sessionId = UUID.randomUUID().toString()
         activeRunStartedAtMillis = startedAt
 
         runSessionState = runSessionState.copy(
@@ -493,7 +494,7 @@ class RhythmRunViewModel(
         }
 
         return RunRecord(
-            sessionId = state.liveRun.sessionId ?: "local-$timestamp",
+            sessionId = state.liveRun.sessionId ?: UUID.randomUUID().toString(),
             startEpochMillis = timestamp,
             startLocalDate = localDate(calendar),
             startLocalTime = localTime(calendar),

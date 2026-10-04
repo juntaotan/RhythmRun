@@ -289,6 +289,7 @@ class SensorCaptureManager(
         heartRatePermissionGranted: Boolean,
         activityPermissionGranted: Boolean,
         fineLocationPermissionGranted: Boolean,
+        sessionId: String? = null,
     ) {
         if (captureRequested) return
         this.heartRatePermissionGranted = heartRatePermissionGranted
@@ -297,7 +298,7 @@ class SensorCaptureManager(
         captureRequested = true
         storageSequence = 0L
         bootToEpochOffsetMillis = System.currentTimeMillis() - SystemClock.elapsedRealtime()
-        currentSessionId = temporaryStorage.beginSession()
+        currentSessionId = temporaryStorage.beginSession(sessionId)
         intervalStepTotal = 0L
         firstMeasureHeartRateAtMillis = null
         emulatorHeartRateReceived = false
