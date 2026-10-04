@@ -362,8 +362,8 @@ private fun HistorySessionCard(session: HistorySessionUiModel, onClick: () -> Un
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
-                text = session.dataCoveragePercent?.let { "Data coverage $it%" }
-                    ?: "Data coverage unavailable",
+                text = session.dataCoveragePercent?.let { "Cadence coverage $it%" }
+                    ?: "Cadence coverage unavailable",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
             )

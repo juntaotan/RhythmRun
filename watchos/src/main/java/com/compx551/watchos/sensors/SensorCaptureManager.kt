@@ -25,6 +25,7 @@ import androidx.health.services.client.data.ExerciseUpdate
 import androidx.health.services.client.data.LocationAccuracy
 import com.compx551.watchos.communication.WatchDataSender
 import com.compx551.watchos.storage.TemporarySessionStorage
+import java.util.UUID
 
 /** Latest values from the four capture sources retained by RhythmRun. */
 data class SensorCaptureState(
@@ -106,6 +107,8 @@ class SensorCaptureManager(
     private var currentSessionId: String? = null
     private var storageSequence = 0L
     private var bootToEpochOffsetMillis = 0L
+    private var finishOnStop = true
+    private var captureGeneration = 0L
 
     private val measureHandoff = Runnable { finishMeasureAndStartExercise() }
 
@@ -296,9 +299,19 @@ class SensorCaptureManager(
         this.activityPermissionGranted = activityPermissionGranted
         this.fineLocationPermissionGranted = fineLocationPermissionGranted
         captureRequested = true
-        storageSequence = 0L
+        val id = sessionId?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString()
+        val generation = ++captureGeneration
+        currentSessionId = id
+        updateState { it.copy(phase = CapturePhase.MEASURING_HEART_RATE, status = "Preparing session") }
+        temporaryStorage.beginSession(id) { nextSequence ->
+            if (generation != captureGeneration || !captureRequested) return@beginSession
+            storageSequence = nextSequence
+            beginSensors()
+        }
+    }
+
+    private fun beginSensors() {
         bootToEpochOffsetMillis = System.currentTimeMillis() - SystemClock.elapsedRealtime()
-        currentSessionId = temporaryStorage.beginSession(sessionId)
         intervalStepTotal = 0L
         firstMeasureHeartRateAtMillis = null
         emulatorHeartRateReceived = false
@@ -363,8 +376,17 @@ class SensorCaptureManager(
         )
     }
 
-    fun stopCapture() {
-        if (!captureRequested && !exerciseStarted) return
+    fun pauseCapture() = stopCapture(finishSession = false)
+
+    fun stopCapture(finishSession: Boolean = true) {
+        if (finishSession) finishOnStop = true
+        else finishOnStop = false
+        if (state.phase == CapturePhase.STOPPING) return
+        if (!captureRequested && !exerciseStarted) {
+            if (finishOnStop) finishTemporarySession()
+            return
+        }
+        captureGeneration++
         captureRequested = false
         handler.removeCallbacks(measureHandoff)
         sensorManager.unregisterListener(this)
@@ -385,14 +407,15 @@ class SensorCaptureManager(
                             error = error,
                         )
                     }
-                    if (error == null) finishTemporarySession() else interruptTemporarySession()
+                    if (error != null) interruptTemporarySession()
+                    else if (finishOnStop) finishTemporarySession()
                 },
                 mainExecutor,
             )
         } else {
             clearExerciseCallback()
             updateState { it.copy(phase = CapturePhase.IDLE, status = "Capture stopped") }
-            finishTemporarySession()
+            if (finishOnStop) finishTemporarySession()
         }
     }
 

@@ -21,7 +21,6 @@ import kotlinx.coroutines.launch
 
 /** Receives, validates and exposes persisted watch readings while the phone UI is closed. */
 class RhythmDataListenerService : WearableListenerService() {
-    private val lastSequenceByType = mutableMapOf<String, Long>()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val repository by lazy {
         RoomRunRepository(PhoneRoomDatabase.getInstance(applicationContext))
@@ -117,20 +116,12 @@ class RhythmDataListenerService : WearableListenerService() {
         val recordKey = "${reading.sessionId}:${reading.dataType}:${reading.sequence}"
         if (!remember(recordKey)) return
 
-        val previousSequence = lastSequenceByType[reading.dataType]
-        val missingFrom = previousSequence?.plus(1)?.takeIf { reading.sequence > it }
-        val missingTo = missingFrom?.let { reading.sequence - 1 }
-        lastSequenceByType[reading.dataType] = maxOf(
-            reading.sequence,
-            previousSequence ?: reading.sequence,
-        )
-
         serviceScope.launch {
             repository.persistBatch(reading.toRunDataBatch())
         }
 
         readingListener?.invoke(reading)
-        sendBroadcast(reading.toIntent(missingFrom, missingTo).setPackage(packageName))
+        sendBroadcast(reading.toIntent().setPackage(packageName))
     }
 
     private fun RhythmReading.toRunDataBatch(): RunDataBatch = when (dataType) {
@@ -315,14 +306,12 @@ class RhythmDataListenerService : WearableListenerService() {
         true
     }
 
-    private fun RhythmReading.toIntent(missingFrom: Long?, missingTo: Long?): Intent =
+    private fun RhythmReading.toIntent(): Intent =
         Intent(ACTION_SAMPLE_RECEIVED).apply {
             putExtra(EXTRA_DATA_TYPE, dataType)
             putExtra(EXTRA_SESSION_ID, sessionId)
             putExtra(EXTRA_SEQUENCE, sequence)
             putExtra(EXTRA_TIMESTAMP, timestamp)
-            missingFrom?.let { putExtra(EXTRA_MISSING_FROM, it) }
-            missingTo?.let { putExtra(EXTRA_MISSING_TO, it) }
             accelerationX?.let { putExtra(EXTRA_ACCEL_X, it) }
             accelerationY?.let { putExtra(EXTRA_ACCEL_Y, it) }
             accelerationZ?.let { putExtra(EXTRA_ACCEL_Z, it) }
@@ -355,8 +344,6 @@ class RhythmDataListenerService : WearableListenerService() {
         const val EXTRA_DATA_TYPE = "data_type"
         const val EXTRA_SEQUENCE = "sequence"
         const val EXTRA_TIMESTAMP = "timestamp"
-        const val EXTRA_MISSING_FROM = "missing_sequence_from"
-        const val EXTRA_MISSING_TO = "missing_sequence_to"
         const val EXTRA_ACCEL_X = "accelerometer_x"
         const val EXTRA_ACCEL_Y = "accelerometer_y"
         const val EXTRA_ACCEL_Z = "accelerometer_z"

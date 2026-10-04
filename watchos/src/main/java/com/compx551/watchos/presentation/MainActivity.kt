@@ -46,6 +46,7 @@ class MainActivity : ComponentActivity() {
     private var permissionMessage by mutableStateOf<String?>(null)
     private var showExerciseHistory by mutableStateOf(false)
     private var pendingSessionId: String? = null
+    private var pendingResumeSessionId: String? = null
     private lateinit var sensorCaptureManager: SensorCaptureManager
 
     private val commandReceiver = object : BroadcastReceiver() {
@@ -72,7 +73,15 @@ class MainActivity : ComponentActivity() {
         val temporaryStorage = TemporarySessionStorage(this)
         val watchDataSender = WatchDataSender(this)
         sensorCaptureManager =
-            SensorCaptureManager(this, temporaryStorage, watchDataSender) { captureState = it }
+            SensorCaptureManager(this, temporaryStorage, watchDataSender) {
+                captureState = it
+                if (it.phase == CapturePhase.IDLE) {
+                    pendingResumeSessionId?.let { id ->
+                        pendingResumeSessionId = null
+                        requestPermissionsAndStart(id)
+                    }
+                }
+            }
 
         ContextCompat.registerReceiver(
             this,
@@ -85,8 +94,11 @@ class MainActivity : ComponentActivity() {
             WearApp(
                 state = captureState,
                 permissionMessage = permissionMessage,
-                onStart = { requestPermissionsAndStart(null) },
-                onStop = sensorCaptureManager::stopCapture,
+                onStart = {
+                    pendingSessionId = null
+                    requestPermissionsAndStart(null)
+                },
+                onStop = { sensorCaptureManager.stopCapture() },
                 showExerciseHistory = showExerciseHistory,
                 onViewExerciseHistory = { showExerciseHistory = true },
                 onCloseExerciseHistory = { showExerciseHistory = false },
@@ -120,12 +132,19 @@ class MainActivity : ComponentActivity() {
             RhythmProtocol.SESSION_START_PATH, RhythmProtocol.SESSION_RESUME_PATH -> {
                 if (captureState.phase == CapturePhase.IDLE) {
                     requestPermissionsAndStart(sessionId)
+                } else if (path == RhythmProtocol.SESSION_RESUME_PATH && captureState.phase == CapturePhase.STOPPING) {
+                    pendingResumeSessionId = sessionId
                 }
             }
-            RhythmProtocol.SESSION_PAUSE_PATH, RhythmProtocol.SESSION_STOP_PATH -> {
+            RhythmProtocol.SESSION_PAUSE_PATH -> {
+                pendingResumeSessionId = null
                 if (captureState.phase != CapturePhase.IDLE) {
-                    sensorCaptureManager.stopCapture()
+                    sensorCaptureManager.pauseCapture()
                 }
+            }
+            RhythmProtocol.SESSION_STOP_PATH -> {
+                pendingResumeSessionId = null
+                sensorCaptureManager.stopCapture()
             }
         }
     }

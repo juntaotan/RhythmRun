@@ -2,6 +2,8 @@ package com.compx551.watchos.storage
 
 import android.content.Context
 import android.util.Log
+import android.os.Handler
+import android.os.Looper
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
@@ -15,7 +17,6 @@ import androidx.room.RoomDatabase
 import com.compx551.watchos.sensors.AccelerationReading
 import com.compx551.watchos.sensors.HeartRateSource
 import com.compx551.watchos.sensors.LocationReading
-import java.util.UUID
 import java.util.concurrent.Executors
 
 /** The lifecycle of sensor data kept temporarily on the watch. */
@@ -123,6 +124,20 @@ data class TemporaryLocationEntity(
 interface TemporarySessionDao {
     @Insert
     fun insertSession(session: TemporarySessionEntity)
+
+    @Query("SELECT * FROM temporary_sessions WHERE sessionId = :sessionId LIMIT 1")
+    fun findSession(sessionId: String): TemporarySessionEntity?
+
+    @Query("UPDATE temporary_sessions SET state = 'ACTIVE', endedAtEpochMillis = NULL WHERE sessionId = :sessionId")
+    fun reactivateSession(sessionId: String)
+
+    @Query("""SELECT MAX(sequence) FROM (
+        SELECT sequence FROM temporary_accelerometer_samples WHERE sessionId = :sessionId
+        UNION ALL SELECT sequence FROM temporary_heart_rate_samples WHERE sessionId = :sessionId
+        UNION ALL SELECT sequence FROM temporary_step_samples WHERE sessionId = :sessionId
+        UNION ALL SELECT sequence FROM temporary_location_samples WHERE sessionId = :sessionId
+    )""")
+    fun lastSequence(sessionId: String): Long?
 
     @Insert
     fun insertAccelerometer(sample: TemporaryAccelerometerEntity)
@@ -241,6 +256,7 @@ class TemporarySessionStorage(
     context: Context,
 ) {
     private val dao = RhythmRunDatabase.getInstance(context).temporarySessionDao()
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     init {
         // An ACTIVE row left by process death is retained and made eligible for later sync.
@@ -248,19 +264,19 @@ class TemporarySessionStorage(
     }
 
     fun beginSession(
-        sessionId: String? = null,
+        sessionId: String,
         startedAtEpochMillis: Long = System.currentTimeMillis(),
-    ): String {
-        val id = sessionId?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString()
+        onReady: (Long) -> Unit,
+    ) {
         write {
-            dao.insertSession(
-                TemporarySessionEntity(
-                    sessionId = id,
-                    startedAtEpochMillis = startedAtEpochMillis,
-                ),
-            )
+            if (dao.findSession(sessionId) == null) {
+                dao.insertSession(TemporarySessionEntity(sessionId = sessionId, startedAtEpochMillis = startedAtEpochMillis))
+            } else {
+                dao.reactivateSession(sessionId)
+            }
+            val nextSequence = (dao.lastSequence(sessionId) ?: -1L) + 1L
+            mainHandler.post { onReady(nextSequence) }
         }
-        return id
     }
 
     fun saveAccelerometer(sessionId: String, sequence: Long, reading: AccelerationReading) =

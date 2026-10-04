@@ -20,6 +20,7 @@ import com.compx551.rhythmrun.domain.model.RunPlanStage
 import com.compx551.rhythmrun.domain.model.RunSessionState
 import com.compx551.rhythmrun.domain.model.RunStage
 import com.compx551.rhythmrun.domain.model.RunStageResult
+import com.compx551.rhythmrun.domain.model.StageChangeRecord
 import com.compx551.rhythmrun.domain.repository.RunRepository
 import com.compx551.rhythmrun.processing.model.ProcessedLocation
 import com.compx551.rhythmrun.ui.dashboard.DashboardUiState
@@ -36,6 +37,7 @@ import com.compx551.rhythmrun.communication.RhythmDataListenerService
 import com.compx551.rhythmrun.communication.RhythmReading
 import com.compx551.rhythmrun.communication.SessionCommandClient
 import com.compx551.rhythmrun.processing.LiveRunProcessor
+import com.compx551.rhythmrun.processing.RunSummaryCalculator
 import com.compx551.rhythmrun.processing.model.ProcessedReading
 import java.util.Calendar
 import java.util.Locale
@@ -61,6 +63,8 @@ class RhythmRunViewModel(
     private var timerJob: Job? = null
     private var processedReadingsJob: Job? = null
     private var activeRunStartedAtMillis: Long? = null
+    private var timelineJob: Job? = null
+    private var lastTimelineSequence = 0L
     private val initialCalendar = Calendar.getInstance(timeZone)
     private val selectedMonth = MutableStateFlow(
         MonthSelection(
@@ -130,10 +134,21 @@ class RhythmRunViewModel(
 
     init {
         RhythmDataListenerService.readingListener = watchReadingListener
+        viewModelScope.launch {
+            repository.records.collect { records ->
+                val summary = runSessionState.summary ?: return@collect
+                records.firstOrNull { it.sessionId == summary.sessionId }?.let { updated ->
+                    runSessionState = runSessionState.copy(
+                        summary = updated.toSummaryUiState(runSessionState.summary?.routePoints.orEmpty()),
+                    )
+                }
+            }
+        }
     }
 
     fun startNewRun() {
         activeRunStartedAtMillis = null
+        timelineJob = null
         runSessionState = createInitialRunSessionUiState()
     }
 
@@ -162,6 +177,27 @@ class RhythmRunViewModel(
             ),
         )
         startLiveProcessing()
+        viewModelScope.launch {
+            val changes = repository.stageChanges(plan.sessionId).sortedBy { it.timestampEpochMillis }
+            val last = changes.lastOrNull() ?: return@launch
+            val now = nowMillis()
+            val activeIntervals = changes.zipWithNext().mapNotNull { (start, end) ->
+                if (start.reason == "PAUSE" || start.reason == "STOP") null
+                else start.stage to (end.timestampEpochMillis - start.timestampEpochMillis).coerceAtLeast(0L)
+            } + if (last.reason == "PAUSE" || last.reason == "STOP") emptyList()
+                else listOf(last.stage to (now - last.timestampEpochMillis).coerceAtLeast(0L))
+            val stageIndex = stages.indexOfFirst { it.stage == last.stage }
+            if (stageIndex < 0 || runSessionState.liveRun.sessionId != plan.sessionId) return@launch
+            val stage = stages[stageIndex]
+            runSessionState = runSessionState.copy(liveRun = runSessionState.liveRun.copy(
+                currentStage = stage.stage,
+                currentStageNumber = stageIndex + 1,
+                stageDurationSeconds = durationMinutesToSeconds(stage.durationMinutesInput),
+                targetCadenceSpm = stage.targetCadenceSpmInput?.toIntOrNull(),
+                totalElapsedSeconds = activeIntervals.sumOf { it.second } / 1_000,
+                stageElapsedSeconds = activeIntervals.filter { it.first == stage.stage }.sumOf { it.second } / 1_000,
+            ))
+        }
     }
 
     fun updateDuration(stage: RunStage, value: String) {
@@ -222,6 +258,7 @@ class RhythmRunViewModel(
         }
         sessionCommandClient?.sendStart(sessionId)
         startLiveProcessing()
+        recordTimeline("START")
     }
 
     fun togglePause() {
@@ -243,10 +280,12 @@ class RhythmRunViewModel(
             } else {
                 sessionCommandClient?.sendResume(sessionId)
             }
+            recordTimeline(if (paused) "PAUSE" else "RESUME")
         }
     }
 
     fun finishRun() {
+        recordTimeline("STOP")
         stopLiveProcessing()
         runSessionState.liveRun.sessionId?.let { sessionId ->
             sessionCommandClient?.sendStop(sessionId)
@@ -258,7 +297,16 @@ class RhythmRunViewModel(
             summary = record.toSummaryUiState(routePoints = route),
         )
         viewModelScope.launch {
-            repository.upsert(record)
+            timelineJob?.join()
+            val calculated = RunSummaryCalculator.update(
+                record,
+                repository.rawReadings(record.sessionId),
+                repository.stageChanges(record.sessionId),
+            )
+            repository.upsert(calculated)
+            runSessionState = runSessionState.copy(
+                summary = calculated.toSummaryUiState(routePoints = route),
+            )
             if (route.isNotEmpty()) {
                 val fixes = route.mapIndexed { index, loc ->
                     LocationFixRecord(
@@ -297,6 +345,21 @@ class RhythmRunViewModel(
         RhythmDataListenerService.readingListener = watchReadingListener
     }
 
+    private fun recordTimeline(reason: String) {
+        val live = runSessionState.liveRun
+        val sessionId = live.sessionId ?: return
+        val timestamp = nowMillis()
+        val sequence = maxOf(timestamp, lastTimelineSequence + 1)
+        lastTimelineSequence = sequence
+        val previous = timelineJob
+        timelineJob = viewModelScope.launch {
+            previous?.join()
+            repository.persistBatch(RunDataBatch(stageChanges = listOf(
+                StageChangeRecord(sessionId, sequence, timestamp, live.currentStage, reason),
+            )))
+        }
+    }
+
     private fun advanceTimer() {
         val live = runSessionState.liveRun
         if (live.isPaused) return
@@ -319,6 +382,7 @@ class RhythmRunViewModel(
                         targetCadenceSpm = nextStagePlan.targetCadenceSpmInput?.toIntOrNull(),
                     ),
                 )
+                recordTimeline("STAGE")
             } else {
                 runSessionState = runSessionState.copy(
                     liveRun = live.copy(
