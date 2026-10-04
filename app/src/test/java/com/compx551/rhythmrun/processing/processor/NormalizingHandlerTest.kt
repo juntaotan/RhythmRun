@@ -17,7 +17,7 @@ class NormalizingHandlerTest {
                     AccelerationUnit.STANDARD_GRAVITY,
                 ),
                 RawReading.Velocity(1_000, 18.0, VelocityUnit.KILOMETERS_PER_HOUR),
-                RawReading.StepCounter(1_000, 3),
+                RawReading.StepCounter(1_000, 3.0),
                 RawReading.Location(1_000, -36.85, 174.76, 5.0),
             ),
         )

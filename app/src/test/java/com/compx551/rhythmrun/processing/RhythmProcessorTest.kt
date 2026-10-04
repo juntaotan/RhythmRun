@@ -27,7 +27,7 @@ class RhythmProcessorTest {
                 unit = AccelerationUnit.METERS_PER_SECOND_SQUARED,
             ),
             RawReading.Velocity(1_000, 18.0, VelocityUnit.KILOMETERS_PER_HOUR),
-            RawReading.StepCounter(1_000, 3),
+            RawReading.StepCounter(1_000, 3.0),
             RawReading.Location(1_000, -36.8509, 174.7645, 5.0),
         )
 
@@ -54,7 +54,7 @@ class RhythmProcessorTest {
             RawReading.HeartRate(1_000, 300.0), // Invalid: maximum accepted value is 250 bpm.
             RawReading.Acceleration(1_000, 3.0, 4.0, 0.0),
             RawReading.Velocity(1_000, 5.0),
-            RawReading.StepCounter(1_000, 3),
+            RawReading.StepCounter(1_000, 3.0),
             RawReading.Location(1_000, -36.8509, 174.7645, 5.0),
         )
 

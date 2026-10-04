@@ -55,7 +55,7 @@ class ValidationHandler {
 
                 is RawReading.StepCounter -> reading.copy(
                     timestampMillis = timestamp,
-                    stepsPerSecond = reading.stepsPerSecond.coerceAtLeast(0L),
+                    stepsPerSecond = reading.stepsPerSecond.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0,
                 )
 
                 is RawReading.Location -> {

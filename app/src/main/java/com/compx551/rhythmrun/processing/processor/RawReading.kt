@@ -22,10 +22,10 @@ sealed interface RawReading {
         val unit: VelocityUnit = VelocityUnit.METERS_PER_SECOND,
     ) : RawReading
 
-    /** Number of steps reported by the UI for this one-second exercise interval. */
+    /** Cadence expressed as steps per second. */
     data class StepCounter(
         override val timestampMillis: Long,
-        val stepsPerSecond: Long,
+        val stepsPerSecond: Double,
     ) : RawReading
 
     data class Location(

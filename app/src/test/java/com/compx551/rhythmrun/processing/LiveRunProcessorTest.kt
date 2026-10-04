@@ -4,7 +4,6 @@ import com.compx551.rhythmrun.communication.RhythmReading
 import com.compx551.rhythmrun.processing.model.EfficiencyBaseline
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -87,14 +86,79 @@ class LiveRunProcessorTest {
     }
 
     @Test
-    fun startsWithoutEfficiencyThenUsesHistoricalBaseline() {
+    fun usesUnitDenominatorUntilHistoricalBaselineLoads() {
         val processor = LiveRunProcessor()
         processor.onReading(RhythmReading("hr", "run", 0, 1_000, heartRateBpm = 120f))
         processor.onReading(RhythmReading("cadence", "run", 1, 2_000, cadenceStepsPerMinute = 160f))
-        assertNull(processor.processedReadings.value.last().efficiency)
+        val withoutBaseline = processor.processedReadings.value.last().efficiency!!
+        assertTrue(withoutBaseline > 0.0)
 
         processor.setBaseline(EfficiencyBaseline(2.0, 120.0, 3))
         processor.onReading(RhythmReading("cadence", "run", 2, 3_000, cadenceStepsPerMinute = 160f))
-        assertNotNull(processor.processedReadings.value.last().efficiency)
+        assertTrue(processor.processedReadings.value.last().efficiency!! > withoutBaseline)
+    }
+
+    @Test
+    fun preservesCadenceWithoutRoundingToWholeStepsPerSecond() {
+        val processor = LiveRunProcessor()
+        processor.onReading(RhythmReading("cadence", "run", 0, 1_000, cadenceStepsPerMinute = 160f))
+
+        assertEquals(160.0, processor.processedReadings.value.last().stepCounterPerSecond * 60.0, 1e-6)
+    }
+
+    @Test
+    fun directCadenceTakesPriorityOverStepCountAtTheSameTimestamp() {
+        val processor = LiveRunProcessor()
+        processor.onReading(RhythmReading("steps", "run", 0, 1_000, stepCount = 0))
+        processor.onReading(RhythmReading("cadence", "run", 1, 2_000, cadenceStepsPerMinute = 160f))
+        processor.onReading(RhythmReading("steps", "run", 1, 2_000, stepCount = 4))
+
+        assertEquals(160.0, processor.processedReadings.value.last().stepCounterPerSecond * 60.0, 1e-6)
+    }
+
+    @Test
+    fun fallsBackToStepCountWhenDirectCadenceExpires() {
+        val processor = LiveRunProcessor()
+        processor.onReading(RhythmReading("steps", "run", 0, 1_000, stepCount = 0))
+        processor.onReading(RhythmReading("cadence", "run", 1, 2_000, cadenceStepsPerMinute = 160f))
+        processor.onReading(RhythmReading("steps", "run", 2, 13_000, stepCount = 5))
+
+        assertEquals(70.0, processor.processedReadings.value.last().stepCounterPerSecond * 60.0, 1e-6)
+    }
+
+    @Test
+    fun directZeroCadenceClearsSmoothedCadence() {
+        val processor = LiveRunProcessor()
+        processor.onReading(RhythmReading("cadence", "run", 0, 1_000, cadenceStepsPerMinute = 160f))
+        repeat(5) { index ->
+            processor.onReading(RhythmReading("cadence", "run", index + 1L, 2_000L + index * 1_000L, cadenceStepsPerMinute = 0f))
+        }
+
+        assertEquals(0.0, processor.processedReadings.value.last().stepCounterPerSecond, 1e-6)
+        assertEquals(0.0, processor.processedReadings.value.last().velocityMetersPerSecond, 1e-6)
+    }
+
+    @Test
+    fun unchangedStepCountClearsDerivedCadence() {
+        val processor = LiveRunProcessor()
+        processor.onReading(RhythmReading("steps", "run", 0, 1_000, stepCount = 0))
+        processor.onReading(RhythmReading("steps", "run", 1, 2_000, stepCount = 4))
+        repeat(5) { index ->
+            processor.onReading(RhythmReading("steps", "run", index + 2L, 3_000L + index * 1_000L, stepCount = 4))
+        }
+
+        assertEquals(0.0, processor.processedReadings.value.last().stepCounterPerSecond, 1e-6)
+    }
+
+    @Test
+    fun expiredStepCountCadenceFallsToZeroOnNextReading() {
+        val processor = LiveRunProcessor()
+        processor.onReading(RhythmReading("steps", "run", 0, 1_000, stepCount = 0))
+        processor.onReading(RhythmReading("steps", "run", 1, 2_000, stepCount = 4))
+        repeat(5) { index ->
+            processor.onReading(RhythmReading("hr", "run", index + 2L, 13_000L + index * 1_000L, heartRateBpm = 120f))
+        }
+
+        assertEquals(0.0, processor.processedReadings.value.last().stepCounterPerSecond, 1e-6)
     }
 }

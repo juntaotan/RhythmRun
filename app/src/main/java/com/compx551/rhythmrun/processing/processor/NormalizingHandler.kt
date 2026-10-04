@@ -43,7 +43,7 @@ class NormalizingHandler {
                 )
 
                 is RawReading.StepCounter -> processedReading.copy(
-                    stepCounterPerSecond = reading.stepsPerSecond.toDouble(),
+                    stepCounterPerSecond = reading.stepsPerSecond,
                 )
 
                 is RawReading.Location -> {

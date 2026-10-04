@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import com.compx551.rhythmrun.ui.common.formatClockDuration
 import com.compx551.rhythmrun.ui.common.formatOneDecimal
 import com.compx551.rhythmrun.ui.common.label
+import java.util.Locale
 
 @Composable
 fun LiveRunContent(
@@ -206,7 +207,7 @@ fun LiveRunContent(
                         ?.let(::formatOneDecimal) ?: "--",
                     unit = "km/h",
                     supportingText = state.efficiency?.let {
-                        "Efficiency ${formatOneDecimal(it)}x"
+                        "Efficiency ${String.format(Locale.US, "%.3f", it)}x"
                     } ?: "Efficiency unavailable",
                     modifier = Modifier.weight(1f),
                 )
@@ -345,6 +346,6 @@ private fun syncStatusText(
             "Watch data synced"
 
         LiveRunSyncStatus.ConnectionLost ->
-            "Watch connection lost"
+            "Watch data interrupted"
     }
 }

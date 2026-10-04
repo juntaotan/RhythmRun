@@ -22,8 +22,10 @@ import com.compx551.rhythmrun.domain.model.RunStage
 import com.compx551.rhythmrun.domain.model.RunStageResult
 import com.compx551.rhythmrun.domain.model.StageChangeRecord
 import com.compx551.rhythmrun.domain.repository.RunRepository
+import com.compx551.rhythmrun.location.PhoneLocationService
 import com.compx551.rhythmrun.processing.model.ProcessedLocation
 import com.compx551.rhythmrun.ui.dashboard.DashboardUiState
+import com.compx551.rhythmrun.ui.dashboard.WatchConnectionStatus
 import com.compx551.rhythmrun.ui.history.HistoryUiState
 import com.compx551.rhythmrun.ui.mapping.buildDashboardUiState
 import com.compx551.rhythmrun.ui.mapping.buildHistoryUiState
@@ -59,6 +61,7 @@ class RhythmRunViewModel(
     private val sessionCommandClient: SessionCommandClient? = null,
     private val nowMillis: () -> Long = System::currentTimeMillis,
     private val timeZone: TimeZone = TimeZone.getDefault(),
+    private val appContext: Context? = null,
 ) : ViewModel() {
     private var liveRunProcessor: LiveRunProcessor? = null
     private var timerJob: Job? = null
@@ -66,6 +69,10 @@ class RhythmRunViewModel(
     private var activeRunStartedAtMillis: Long? = null
     private var timelineJob: Job? = null
     private var lastTimelineSequence = 0L
+    private var lastLiveReadingAtMillis: Long? = null
+    private var guidanceStarted = false
+    private var restoringRun = false
+    private var phoneGpsSession = false
     private val initialCalendar = Calendar.getInstance(timeZone)
     private val selectedMonth = MutableStateFlow(
         MonthSelection(
@@ -74,6 +81,7 @@ class RhythmRunViewModel(
         ),
     )
     private val selectedDay = MutableStateFlow<Int?>(null)
+    private val watchConnectionStatus = MutableStateFlow(WatchConnectionStatus.Disconnected)
 
     var runSessionState by mutableStateOf(createInitialRunSessionUiState())
         private set
@@ -81,8 +89,9 @@ class RhythmRunViewModel(
     val dashboardState: StateFlow<DashboardUiState> = combine(
         repository.records,
         repository.activePlan,
-    ) { records, activePlan ->
-        buildDashboardUiState(records, activePlan != null)
+        watchConnectionStatus,
+    ) { records, activePlan, connectionStatus ->
+        buildDashboardUiState(records, activePlan != null, connectionStatus)
     }
         .stateIn(
             scope = viewModelScope,
@@ -90,8 +99,19 @@ class RhythmRunViewModel(
             initialValue = buildDashboardUiState(
                 repository.records.value,
                 repository.activePlan.value != null,
+                watchConnectionStatus.value,
             ),
         )
+
+    fun refreshWatchConnection() {
+        sessionCommandClient?.connectedNodes()?.addOnCompleteListener { task ->
+            watchConnectionStatus.value = if (task.isSuccessful && task.result.isNotEmpty()) {
+                WatchConnectionStatus.Connected
+            } else {
+                WatchConnectionStatus.Disconnected
+            }
+        }
+    }
 
     val historyState: StateFlow<HistoryUiState> = combine(
         repository.records,
@@ -118,10 +138,11 @@ class RhythmRunViewModel(
     private val watchReadingListener: (RhythmReading) -> Unit = { reading ->
         viewModelScope.launch {
             val live = runSessionState.liveRun
-            if (live.sessionId != reading.sessionId || live.syncStatus != LiveRunSyncStatus.ReceivingData) {
+            if (restoringRun || live.sessionId != reading.sessionId) return@launch
+            if (phoneGpsSession && reading.dataType == "location") return@launch
+            if (live.syncStatus != LiveRunSyncStatus.ReceivingData) {
                 runSessionState = runSessionState.copy(
                     liveRun = live.copy(
-                        sessionId = reading.sessionId,
                         syncStatus = LiveRunSyncStatus.ReceivingData,
                     ),
                 )
@@ -129,12 +150,14 @@ class RhythmRunViewModel(
             if (liveRunProcessor == null) {
                 startLiveProcessing()
             }
+            lastLiveReadingAtMillis = nowMillis()
             liveRunProcessor?.onReading(reading)
         }
     }
 
     init {
         RhythmDataListenerService.readingListener = watchReadingListener
+        PhoneLocationService.locationListener = ::onPhoneLocation
         viewModelScope.launch {
             repository.records.collect { records ->
                 val summary = runSessionState.summary ?: return@collect
@@ -150,11 +173,17 @@ class RhythmRunViewModel(
     fun startNewRun() {
         activeRunStartedAtMillis = null
         timelineJob = null
+        guidanceStarted = false
+        restoringRun = false
+        phoneGpsSession = false
         runSessionState = createInitialRunSessionUiState()
     }
 
     fun resumeActiveRun() {
         val plan = repository.activePlan.value ?: return
+        restoringRun = true
+        guidanceStarted = false
+        phoneGpsSession = plan.outdoorRouteEnabled
         activeRunStartedAtMillis = plan.startEpochMillis
         val stages = plan.stages.sortedBy { it.order }.map { stage ->
             com.compx551.rhythmrun.ui.runsession.StagePlanUiState(
@@ -178,11 +207,26 @@ class RhythmRunViewModel(
             ),
         )
         startLiveProcessing()
-        if (plan.state == RunSessionState.Active) {
-            sessionCommandClient?.sendResume(plan.sessionId)
-        }
         viewModelScope.launch {
             val changes = repository.stageChanges(plan.sessionId).sortedBy { it.timestampEpochMillis }
+            if (runSessionState.liveRun.sessionId != plan.sessionId) return@launch
+            if (phoneGpsSession) {
+                val fixes = repository.locationFixes(plan.sessionId)
+                val route = fixes.mapNotNull { fix ->
+                    if (fix.available && fix.latitude != null && fix.longitude != null) {
+                        ProcessedLocation(fix.latitude, fix.longitude, fix.accuracyMetres ?: 0.0)
+                    } else null
+                }
+                val distance = route.zipWithNext().sumOf { (a, b) ->
+                    computeDistanceMeters(a.latitude, a.longitude, b.latitude, b.longitude)
+                }
+                runSessionState = runSessionState.copy(liveRun = runSessionState.liveRun.copy(
+                    routePoints = route,
+                    currentLocation = route.lastOrNull(),
+                    distanceMetres = distance,
+                ))
+            }
+            guidanceStarted = changes.any { it.reason == "START" }
             changes.lastOrNull()?.let { last ->
                 val now = nowMillis()
                 val activeIntervals = changes.zipWithNext().mapNotNull { (start, end) ->
@@ -203,12 +247,12 @@ class RhythmRunViewModel(
                     ))
                 }
             }
-            if (runSessionState.liveRun.sessionId != plan.sessionId) return@launch
+            restoringRun = false
             when (plan.state) {
+                RunSessionState.Active -> sessionCommandClient?.sendResume(plan.sessionId)
                 RunSessionState.Paused -> if (runSessionState.liveRun.isPaused) togglePause()
                 RunSessionState.Planned -> {
                     repository.updateSessionState(plan.sessionId, RunSessionState.Active)
-                    if (changes.isEmpty()) recordTimeline("START")
                     sessionCommandClient?.sendStart(plan.sessionId)
                 }
                 else -> Unit
@@ -248,8 +292,11 @@ class RhythmRunViewModel(
         runSessionState = runSessionState.copy(guidanceEnabled = enabled)
     }
 
-    fun startRun() {
+    fun startRun(usePhoneGps: Boolean = false) {
         if (!runSessionState.isPlanValid) return
+        guidanceStarted = false
+        restoringRun = false
+        phoneGpsSession = usePhoneGps && appContext != null
         val warmUp = runSessionState.stages.first { it.stage == RunStage.WarmUp }
         val startedAt = nowMillis()
         val sessionId = UUID.randomUUID().toString()
@@ -272,16 +319,18 @@ class RhythmRunViewModel(
             repository.createSession(createPlan(runSessionState, sessionId, startedAt))
             repository.updateSessionState(sessionId, RunSessionState.Active)
         }
+        if (phoneGpsSession) appContext?.let { PhoneLocationService.start(it, sessionId) }
         sessionCommandClient?.sendStart(sessionId)
         startLiveProcessing()
-        recordTimeline("START")
     }
 
     fun togglePause() {
         val paused = !runSessionState.liveRun.isPaused
+        if (!paused) lastLiveReadingAtMillis = null
         runSessionState = runSessionState.copy(
             liveRun = runSessionState.liveRun.copy(
                 isPaused = paused,
+                syncStatus = if (paused) runSessionState.liveRun.syncStatus else LiveRunSyncStatus.WaitingForWatch,
             ),
         )
         runSessionState.liveRun.sessionId?.let { sessionId ->
@@ -292,11 +341,15 @@ class RhythmRunViewModel(
                 )
             }
             if (paused) {
+                if (phoneGpsSession) appContext?.let { PhoneLocationService.pause(it, sessionId) }
                 sessionCommandClient?.sendPause(sessionId)
             } else {
+                if (phoneGpsSession) appContext?.let { PhoneLocationService.resume(it, sessionId) }
                 sessionCommandClient?.sendResume(sessionId)
             }
-            recordTimeline(if (paused) "PAUSE" else "RESUME")
+            val wasStarted = guidanceStarted
+            if (!paused) startGuidanceIfReady()
+            if (wasStarted) recordTimeline(if (paused) "PAUSE" else "RESUME")
         }
     }
 
@@ -304,6 +357,7 @@ class RhythmRunViewModel(
         recordTimeline("STOP")
         stopLiveProcessing()
         runSessionState.liveRun.sessionId?.let { sessionId ->
+            if (phoneGpsSession) appContext?.let { PhoneLocationService.stop(it, sessionId) }
             sessionCommandClient?.sendStop(sessionId)
         }
         val record = createRunRecord(runSessionState)
@@ -323,7 +377,7 @@ class RhythmRunViewModel(
             runSessionState = runSessionState.copy(
                 summary = calculated.toSummaryUiState(routePoints = route),
             )
-            if (route.isNotEmpty()) {
+            if (route.isNotEmpty() && !phoneGpsSession) {
                 val fixes = route.mapIndexed { index, loc ->
                     LocationFixRecord(
                         sessionId = record.sessionId,
@@ -343,6 +397,7 @@ class RhythmRunViewModel(
     private fun startLiveProcessing() {
         timerJob?.cancel()
         processedReadingsJob?.cancel()
+        lastLiveReadingAtMillis = null
         val processor = LiveRunProcessor()
         liveRunProcessor = processor
         val beforeStart = activeRunStartedAtMillis ?: nowMillis()
@@ -364,6 +419,27 @@ class RhythmRunViewModel(
             }
         }
         RhythmDataListenerService.readingListener = watchReadingListener
+        PhoneLocationService.locationListener = ::onPhoneLocation
+    }
+
+    private fun onPhoneLocation(fix: LocationFixRecord) {
+        val live = runSessionState.liveRun
+        if (!phoneGpsSession || live.sessionId != fix.sessionId || live.isPaused ||
+            runSessionState.mode != RunSessionUiMode.Live
+        ) return
+        val latitude = fix.latitude ?: return
+        val longitude = fix.longitude ?: return
+        val point = ProcessedLocation(latitude, longitude, fix.accuracyMetres ?: 0.0)
+        val previous = live.routePoints.lastOrNull()
+        if (previous?.latitude == latitude && previous.longitude == longitude) return
+        val distance = previous?.let {
+            computeDistanceMeters(it.latitude, it.longitude, latitude, longitude)
+        } ?: 0.0
+        runSessionState = runSessionState.copy(liveRun = live.copy(
+            currentLocation = point,
+            routePoints = live.routePoints + point,
+            distanceMetres = live.distanceMetres + distance,
+        ))
     }
 
     private fun recordTimeline(reason: String) {
@@ -381,9 +457,29 @@ class RhythmRunViewModel(
         }
     }
 
+    private fun startGuidanceIfReady() {
+        if (!guidanceStarted && !runSessionState.liveRun.isPaused && runSessionState.liveRun.heartRateBpm != null) {
+            guidanceStarted = true
+            recordTimeline("START")
+        }
+    }
+
     private fun advanceTimer() {
-        val live = runSessionState.liveRun
+        var live = runSessionState.liveRun
         if (live.isPaused) return
+        if (live.syncStatus == LiveRunSyncStatus.ReceivingData &&
+            lastLiveReadingAtMillis?.let { nowMillis() - it > 15_000L } == true
+        ) {
+            live = live.copy(
+                syncStatus = LiveRunSyncStatus.ConnectionLost,
+                cadenceSpm = live.cadenceSpm?.let { 0 },
+                speedKilometresPerHour = live.speedKilometresPerHour?.let { 0.0 },
+            )
+        }
+        if (!guidanceStarted) {
+            if (live != runSessionState.liveRun) runSessionState = runSessionState.copy(liveRun = live)
+            return
+        }
 
         val newStageElapsed = live.stageElapsedSeconds + 1L
         val newTotalElapsed = live.totalElapsedSeconds + 1L
@@ -450,8 +546,8 @@ class RhythmRunViewModel(
         runSessionState = runSessionState.copy(
             liveRun = currentLive.copy(
                 heartRateBpm = hr ?: currentLive.heartRateBpm,
-                cadenceSpm = if (cadence > 0) cadence else currentLive.cadenceSpm,
-                speedKilometresPerHour = if (speedKmh > 0) speedKmh else currentLive.speedKilometresPerHour,
+                cadenceSpm = cadence.takeIf { it > 0 || currentLive.cadenceSpm != null },
+                speedKilometresPerHour = speedKmh.takeIf { it > 0 || currentLive.speedKilometresPerHour != null },
                 distanceMetres = currentLive.distanceMetres + addedDistance,
                 accelerationMagnitude = reading.accelerationPerSecond.takeIf { it > 0.0 } ?: currentLive.accelerationMagnitude,
                 efficiency = reading.efficiency,
@@ -460,6 +556,7 @@ class RhythmRunViewModel(
                 syncStatus = LiveRunSyncStatus.ReceivingData,
             ),
         )
+        startGuidanceIfReady()
     }
 
     private fun computeDistanceMeters(
@@ -481,7 +578,9 @@ class RhythmRunViewModel(
         processedReadingsJob?.cancel()
         processedReadingsJob = null
         RhythmDataListenerService.readingListener = null
+        PhoneLocationService.locationListener = null
         liveRunProcessor = null
+        lastLiveReadingAtMillis = null
     }
 
     override fun onCleared() {
@@ -533,6 +632,7 @@ class RhythmRunViewModel(
             startLocalTime = localTime(calendar),
             timeZoneId = timeZone.id,
             guidanceEnabled = state.guidanceEnabled,
+            outdoorRouteEnabled = phoneGpsSession,
             state = RunSessionState.Active,
             stages = state.stages.mapIndexed { index, stage ->
                 RunPlanStage(
@@ -609,17 +709,19 @@ class RhythmRunViewModel(
     class Factory(
         private val repository: RunRepository,
         private val sessionCommandClient: SessionCommandClient? = null,
+        private val appContext: Context? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             require(modelClass.isAssignableFrom(RhythmRunViewModel::class.java))
-            return RhythmRunViewModel(repository, sessionCommandClient) as T
+            return RhythmRunViewModel(repository, sessionCommandClient, appContext = appContext) as T
         }
 
         companion object {
             fun production(context: Context): Factory = Factory(
                 repository = RoomRunRepository(PhoneRoomDatabase.getInstance(context)),
                 sessionCommandClient = SessionCommandClient(context),
+                appContext = context.applicationContext,
             )
         }
     }
