@@ -1,6 +1,10 @@
 package com.compx551.watchos.presentation
 
 import android.Manifest
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -28,7 +32,9 @@ import androidx.wear.compose.material3.lazy.transformedHeight
 import androidx.wear.compose.ui.tooling.preview.WearPreviewDevices
 import com.compx551.watchos.presentation.theme.RhythmRunTheme
 import com.compx551.watchos.permissions.HeartRatePermission
+import com.compx551.watchos.communication.RhythmProtocol
 import com.compx551.watchos.communication.WatchDataSender
+import com.compx551.watchos.communication.WatchSessionCommandService
 import com.compx551.watchos.sensors.CapturePhase
 import com.compx551.watchos.sensors.SensorCaptureManager
 import com.compx551.watchos.sensors.SensorCaptureState
@@ -40,6 +46,13 @@ class MainActivity : ComponentActivity() {
     private var permissionMessage by mutableStateOf<String?>(null)
     private var showExerciseHistory by mutableStateOf(false)
     private lateinit var sensorCaptureManager: SensorCaptureManager
+
+    private val commandReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val path = intent?.getStringExtra(WatchSessionCommandService.EXTRA_PATH)
+            handleSessionCommand(path)
+        }
+    }
 
     private val heartRatePermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {
@@ -58,6 +71,14 @@ class MainActivity : ComponentActivity() {
         val watchDataSender = WatchDataSender(this)
         sensorCaptureManager =
             SensorCaptureManager(this, temporaryStorage, watchDataSender) { captureState = it }
+
+        ContextCompat.registerReceiver(
+            this,
+            commandReceiver,
+            IntentFilter(WatchSessionCommandService.ACTION_SESSION_COMMAND),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+
         setContent {
             WearApp(
                 state = captureState,
@@ -69,11 +90,35 @@ class MainActivity : ComponentActivity() {
                 onCloseExerciseHistory = { showExerciseHistory = false },
             )
         }
+
+        handleSessionCommand(intent?.getStringExtra(WatchSessionCommandService.EXTRA_PATH))
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleSessionCommand(intent.getStringExtra(WatchSessionCommandService.EXTRA_PATH))
     }
 
     override fun onDestroy() {
+        unregisterReceiver(commandReceiver)
         sensorCaptureManager.release()
         super.onDestroy()
+    }
+
+    private fun handleSessionCommand(path: String?) {
+        when (path) {
+            RhythmProtocol.SESSION_START_PATH, RhythmProtocol.SESSION_RESUME_PATH -> {
+                if (captureState.phase == CapturePhase.IDLE) {
+                    requestPermissionsAndStart()
+                }
+            }
+            RhythmProtocol.SESSION_PAUSE_PATH, RhythmProtocol.SESSION_STOP_PATH -> {
+                if (captureState.phase != CapturePhase.IDLE) {
+                    sensorCaptureManager.stopCapture()
+                }
+            }
+        }
     }
 
     private fun requestPermissionsAndStart() {
