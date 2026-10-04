@@ -178,26 +178,41 @@ class RhythmRunViewModel(
             ),
         )
         startLiveProcessing()
+        if (plan.state == RunSessionState.Active) {
+            sessionCommandClient?.sendResume(plan.sessionId)
+        }
         viewModelScope.launch {
             val changes = repository.stageChanges(plan.sessionId).sortedBy { it.timestampEpochMillis }
-            val last = changes.lastOrNull() ?: return@launch
-            val now = nowMillis()
-            val activeIntervals = changes.zipWithNext().mapNotNull { (start, end) ->
-                if (start.reason == "PAUSE" || start.reason == "STOP") null
-                else start.stage to (end.timestampEpochMillis - start.timestampEpochMillis).coerceAtLeast(0L)
-            } + if (last.reason == "PAUSE" || last.reason == "STOP") emptyList()
-                else listOf(last.stage to (now - last.timestampEpochMillis).coerceAtLeast(0L))
-            val stageIndex = stages.indexOfFirst { it.stage == last.stage }
-            if (stageIndex < 0 || runSessionState.liveRun.sessionId != plan.sessionId) return@launch
-            val stage = stages[stageIndex]
-            runSessionState = runSessionState.copy(liveRun = runSessionState.liveRun.copy(
-                currentStage = stage.stage,
-                currentStageNumber = stageIndex + 1,
-                stageDurationSeconds = durationMinutesToSeconds(stage.durationMinutesInput),
-                targetCadenceSpm = stage.targetCadenceSpmInput?.toIntOrNull(),
-                totalElapsedSeconds = activeIntervals.sumOf { it.second } / 1_000,
-                stageElapsedSeconds = activeIntervals.filter { it.first == stage.stage }.sumOf { it.second } / 1_000,
-            ))
+            changes.lastOrNull()?.let { last ->
+                val now = nowMillis()
+                val activeIntervals = changes.zipWithNext().mapNotNull { (start, end) ->
+                    if (start.reason == "PAUSE" || start.reason == "STOP") null
+                    else start.stage to (end.timestampEpochMillis - start.timestampEpochMillis).coerceAtLeast(0L)
+                } + if (last.reason == "PAUSE" || last.reason == "STOP") emptyList()
+                    else listOf(last.stage to (now - last.timestampEpochMillis).coerceAtLeast(0L))
+                val stageIndex = stages.indexOfFirst { it.stage == last.stage }
+                if (stageIndex >= 0 && runSessionState.liveRun.sessionId == plan.sessionId) {
+                    val stage = stages[stageIndex]
+                    runSessionState = runSessionState.copy(liveRun = runSessionState.liveRun.copy(
+                        currentStage = stage.stage,
+                        currentStageNumber = stageIndex + 1,
+                        stageDurationSeconds = durationMinutesToSeconds(stage.durationMinutesInput),
+                        targetCadenceSpm = stage.targetCadenceSpmInput?.toIntOrNull(),
+                        totalElapsedSeconds = activeIntervals.sumOf { it.second } / 1_000,
+                        stageElapsedSeconds = activeIntervals.filter { it.first == stage.stage }.sumOf { it.second } / 1_000,
+                    ))
+                }
+            }
+            if (runSessionState.liveRun.sessionId != plan.sessionId) return@launch
+            when (plan.state) {
+                RunSessionState.Paused -> if (runSessionState.liveRun.isPaused) togglePause()
+                RunSessionState.Planned -> {
+                    repository.updateSessionState(plan.sessionId, RunSessionState.Active)
+                    if (changes.isEmpty()) recordTimeline("START")
+                    sessionCommandClient?.sendStart(plan.sessionId)
+                }
+                else -> Unit
+            }
         }
     }
 
