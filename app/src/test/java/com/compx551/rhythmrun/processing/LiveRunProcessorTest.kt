@@ -4,6 +4,7 @@ import com.compx551.rhythmrun.communication.RhythmReading
 import com.compx551.rhythmrun.processing.model.EfficiencyBaseline
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -83,5 +84,17 @@ class LiveRunProcessorTest {
         assertNotNull("Location should be present", latest.location)
         assertEquals(-36.8509, latest.location!!.latitude, 0.001)
         assertEquals(174.7645, latest.location!!.longitude, 0.001)
+    }
+
+    @Test
+    fun startsWithoutEfficiencyThenUsesHistoricalBaseline() {
+        val processor = LiveRunProcessor()
+        processor.onReading(RhythmReading("hr", "run", 0, 1_000, heartRateBpm = 120f))
+        processor.onReading(RhythmReading("cadence", "run", 1, 2_000, cadenceStepsPerMinute = 160f))
+        assertNull(processor.processedReadings.value.last().efficiency)
+
+        processor.setBaseline(EfficiencyBaseline(2.0, 120.0, 3))
+        processor.onReading(RhythmReading("cadence", "run", 2, 3_000, cadenceStepsPerMinute = 160f))
+        assertNotNull(processor.processedReadings.value.last().efficiency)
     }
 }

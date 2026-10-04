@@ -242,6 +242,11 @@ class RoomRunRepository(
         return loadRecord(session)
     }
 
+    override suspend fun previousRuns(beforeStartEpochMillis: Long): List<RunRecord> =
+        dao.observeSessions().first()
+            .filter { it.startEpochMillis < beforeStartEpochMillis && !it.sessionId.startsWith("sample-session-") }
+            .mapNotNull { loadRecord(it) }
+
     override suspend fun rawReadings(sessionId: String): List<RawSensorRecord> =
         dao.findRawReadings(sessionId).map { reading ->
             RawSensorRecord(

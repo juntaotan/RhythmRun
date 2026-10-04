@@ -38,6 +38,7 @@ import com.compx551.rhythmrun.communication.RhythmReading
 import com.compx551.rhythmrun.communication.SessionCommandClient
 import com.compx551.rhythmrun.processing.LiveRunProcessor
 import com.compx551.rhythmrun.processing.RunSummaryCalculator
+import com.compx551.rhythmrun.processing.model.EfficiencyBaseline
 import com.compx551.rhythmrun.processing.model.ProcessedReading
 import java.util.Calendar
 import java.util.Locale
@@ -329,6 +330,11 @@ class RhythmRunViewModel(
         processedReadingsJob?.cancel()
         val processor = LiveRunProcessor()
         liveRunProcessor = processor
+        val beforeStart = activeRunStartedAtMillis ?: nowMillis()
+        viewModelScope.launch {
+            val baseline = EfficiencyBaseline.fromPreviousRuns(repository.previousRuns(beforeStart))
+            if (liveRunProcessor === processor) processor.setBaseline(baseline)
+        }
 
         timerJob = viewModelScope.launch {
             while (true) {

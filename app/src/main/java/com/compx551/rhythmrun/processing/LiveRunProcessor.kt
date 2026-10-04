@@ -12,11 +12,7 @@ import kotlin.math.roundToLong
  * Aggregates sensor data, derives velocity, and drives the processing pipeline.
  */
 class LiveRunProcessor(
-    private val baseline: EfficiencyBaseline = EfficiencyBaseline(
-        averageSpeedMetersPerSecond = 2.5,
-        averageHeartRateBpm = 140.0,
-        historyCount = 0,
-    ),
+    private var baseline: EfficiencyBaseline = EfficiencyBaseline(0.0, 0.0, 0),
 ) {
     val processor = RhythmProcessor()
     val processedReadings: StateFlow<List<ProcessedReading>> = processor.processedReadings
@@ -31,6 +27,10 @@ class LiveRunProcessor(
     private var latestAccuracy: Double? = null
     private var previousStepCount: Long? = null
     private var previousStepTimestamp: Long? = null
+
+    fun setBaseline(value: EfficiencyBaseline?) {
+        baseline = value ?: EfficiencyBaseline(0.0, 0.0, 0)
+    }
 
     fun onReading(reading: RhythmReading) {
         if (currentSessionId != reading.sessionId) {
@@ -80,7 +80,7 @@ class LiveRunProcessor(
             latestCadenceSpm?.let { spm ->
                 val sps = (spm / 60.0).roundToLong().coerceAtLeast(1L)
                 add(RawReading.StepCounter(ts, sps))
-                add(RawReading.Velocity(ts, (spm / 60.0) * DEFAULT_STRIDE_LENGTH_METERS))
+                add(RawReading.Velocity(ts, (spm / 60.0) * EfficiencyBaseline.STRIDE_LENGTH_METERS))
             }
             latestLocation?.let { (lat, lon) ->
                 add(RawReading.Location(ts, lat, lon, latestAccuracy ?: 0.0))
@@ -92,7 +92,4 @@ class LiveRunProcessor(
         }
     }
 
-    companion object {
-        private const val DEFAULT_STRIDE_LENGTH_METERS = 0.75
-    }
 }

@@ -19,6 +19,8 @@ interface RunRepository {
 
     suspend fun findById(sessionId: String): RunRecord?
 
+    suspend fun previousRuns(beforeStartEpochMillis: Long): List<RunRecord>
+
     suspend fun createSession(plan: RunPlan)
 
     suspend fun updateSessionState(

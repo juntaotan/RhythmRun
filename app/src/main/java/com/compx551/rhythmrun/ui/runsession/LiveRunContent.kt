@@ -207,7 +207,7 @@ fun LiveRunContent(
                     unit = "km/h",
                     supportingText = state.efficiency?.let {
                         "Efficiency ${formatOneDecimal(it)}x"
-                    },
+                    } ?: "Efficiency unavailable",
                     modifier = Modifier.weight(1f),
                 )
 
@@ -348,4 +348,3 @@ private fun syncStatusText(
             "Watch connection lost"
     }
 }
-
