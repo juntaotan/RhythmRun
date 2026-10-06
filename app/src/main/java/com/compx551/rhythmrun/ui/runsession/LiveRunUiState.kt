@@ -22,6 +22,7 @@ data class LiveRunUiState(
 
     val heartRateBpm: Int? = null,
     val cadenceSpm: Int? = null,
+    val totalSteps: Long = 0L,
     val targetCadenceSpm: Int? = null,
     val speedKilometresPerHour: Double? = null,
     val distanceMetres: Double = 0.0,

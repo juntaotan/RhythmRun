@@ -210,6 +210,9 @@ interface TemporarySessionDao {
     @Query("SELECT * FROM temporary_step_samples WHERE sessionId = :sessionId ORDER BY sequence")
     fun getStepSamples(sessionId: String): List<TemporaryStepEntity>
 
+    @Query("SELECT COALESCE(MAX(cumulativeSteps), 0) FROM temporary_step_samples WHERE sessionId = :sessionId")
+    fun getTotalSteps(sessionId: String): Long
+
     @Query("SELECT * FROM temporary_location_samples WHERE sessionId = :sessionId ORDER BY sequence")
     fun getLocationSamples(sessionId: String): List<TemporaryLocationEntity>
 
@@ -266,7 +269,7 @@ class TemporarySessionStorage(
     fun beginSession(
         sessionId: String,
         startedAtEpochMillis: Long = System.currentTimeMillis(),
-        onReady: (Long) -> Unit,
+        onReady: (Long, Long) -> Unit,
     ) {
         write {
             if (dao.findSession(sessionId) == null) {
@@ -275,7 +278,8 @@ class TemporarySessionStorage(
                 dao.reactivateSession(sessionId)
             }
             val nextSequence = (dao.lastSequence(sessionId) ?: -1L) + 1L
-            mainHandler.post { onReady(nextSequence) }
+            val totalSteps = dao.getTotalSteps(sessionId)
+            mainHandler.post { onReady(nextSequence, totalSteps) }
         }
     }
 

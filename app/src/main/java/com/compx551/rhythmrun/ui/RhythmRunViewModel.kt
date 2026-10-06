@@ -10,6 +10,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.compx551.rhythmrun.data.local.PhoneRoomDatabase
 import com.compx551.rhythmrun.data.repository.RoomRunRepository
+import com.compx551.rhythmrun.domain.model.StoredSensorType
 import com.compx551.rhythmrun.domain.model.CadenceSource
 import com.compx551.rhythmrun.domain.model.RunCompletion
 import com.compx551.rhythmrun.domain.model.RunRecord
@@ -138,15 +139,14 @@ class RhythmRunViewModel(
     private val watchReadingListener: (RhythmReading) -> Unit = { reading ->
         viewModelScope.launch {
             val live = runSessionState.liveRun
-            if (restoringRun || live.sessionId != reading.sessionId) return@launch
+            if (restoringRun || runSessionState.mode != RunSessionUiMode.Live || live.sessionId != reading.sessionId) return@launch
             if (phoneGpsSession && reading.dataType == "location") return@launch
-            if (live.syncStatus != LiveRunSyncStatus.ReceivingData) {
-                runSessionState = runSessionState.copy(
-                    liveRun = live.copy(
-                        syncStatus = LiveRunSyncStatus.ReceivingData,
-                    ),
-                )
-            }
+            runSessionState = runSessionState.copy(
+                liveRun = live.copy(
+                    totalSteps = maxOf(live.totalSteps, reading.stepCount ?: 0L),
+                    syncStatus = LiveRunSyncStatus.ReceivingData,
+                ),
+            )
             if (liveRunProcessor == null) {
                 startLiveProcessing()
             }
@@ -210,6 +210,12 @@ class RhythmRunViewModel(
         viewModelScope.launch {
             val changes = repository.stageChanges(plan.sessionId).sortedBy { it.timestampEpochMillis }
             if (runSessionState.liveRun.sessionId != plan.sessionId) return@launch
+            val totalSteps = repository.rawReadings(plan.sessionId)
+                .filter { it.sensorType == StoredSensorType.StepCount && it.available }
+                .mapNotNull { it.scalarValue?.takeIf { value -> value.isFinite() && value >= 0 }?.toLong() }
+                .maxOrNull() ?: 0L
+            if (runSessionState.liveRun.sessionId != plan.sessionId) return@launch
+            runSessionState = runSessionState.copy(liveRun = runSessionState.liveRun.copy(totalSteps = totalSteps))
             if (phoneGpsSession) {
                 val fixes = repository.locationFixes(plan.sessionId)
                 val route = fixes.mapNotNull { fix ->

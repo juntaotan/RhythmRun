@@ -197,6 +197,15 @@ fun LiveRunContent(
         }
 
         item {
+            MetricCard(
+                label = "TOTAL STEPS",
+                value = state.totalSteps.toString(),
+                unit = "steps",
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
