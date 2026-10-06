@@ -99,7 +99,7 @@ class SensorCaptureManager(
     private var exerciseCallbackRegistered = false
     private var exerciseStarted = false
     private var firstMeasureHeartRateAtMillis: Long? = null
-    private var intervalStepTotal = 0L
+    private val stepCounter = SessionStepCounter()
     private var heartRatePermissionGranted = false
     private var activityPermissionGranted = false
     private var fineLocationPermissionGranted = false
@@ -188,9 +188,14 @@ class SensorCaptureManager(
                 val heartRate = metrics.getData(DataType.HEART_RATE_BPM).lastOrNull()?.value
                 val cadence = metrics.getData(DataType.STEPS_PER_MINUTE).lastOrNull()?.value
                 val cumulativeSteps = metrics.getData(DataType.STEPS_TOTAL)?.total
-                val intervalSteps = metrics.getData(DataType.STEPS).sumOf { it.value }
-                if (cumulativeSteps == null && intervalSteps > 0L) {
-                    intervalStepTotal += intervalSteps
+                val stepIntervals = metrics.getData(DataType.STEPS)
+                val intervalSteps = stepIntervals.sumOf { it.value }
+                if (cumulativeSteps != null) {
+                    stepCounter.updateTotal(cumulativeSteps)
+                } else {
+                    stepIntervals.sortedBy { it.endDurationFromBoot }.forEach {
+                        stepCounter.addInterval(it.value, it.endDurationFromBoot.toNanos())
+                    }
                 }
                 val locationPoint = metrics.getData(DataType.LOCATION).lastOrNull()
                 val location =
@@ -207,7 +212,7 @@ class SensorCaptureManager(
                 if (heartRate != null && !emulatorHeartRateReceived) {
                     saveHeartRate(heartRate, HeartRateSource.EXERCISE_CLIENT)
                 }
-                val steps = cumulativeSteps ?: intervalStepTotal
+                val steps = stepCounter.total
                 if (cumulativeSteps != null || intervalSteps > 0L || cadence != null) {
                     currentSessionId?.let { sessionId ->
                         val sequence = nextStorageSequence()
@@ -308,37 +313,41 @@ class SensorCaptureManager(
         val generation = ++captureGeneration
         currentSessionId = id
         updateState { it.copy(phase = CapturePhase.MEASURING_HEART_RATE, status = "Preparing session") }
-        temporaryStorage.beginSession(id) { nextSequence ->
+        temporaryStorage.beginSession(id) { nextSequence, totalSteps ->
             if (generation != captureGeneration || !captureRequested) return@beginSession
             storageSequence = nextSequence
-            beginSensors()
+            beginSensors(totalSteps)
         }
     }
 
     fun updateSessionId(newSessionId: String) {
         if (newSessionId.isBlank() || currentSessionId == newSessionId) return
         val previousSessionId = currentSessionId
+        stepCounter.rebase()
         currentSessionId = newSessionId
         if (previousSessionId != null) {
             temporaryStorage.finishSession(previousSessionId)
         }
         val generation = captureGeneration
-        temporaryStorage.beginSession(newSessionId) { nextSequence ->
-            if (generation == captureGeneration) {
+        temporaryStorage.beginSession(newSessionId) { nextSequence, totalSteps ->
+            if (generation == captureGeneration && currentSessionId == newSessionId) {
                 storageSequence = nextSequence
+                stepCounter.rebase(stepCounter.total + totalSteps)
+                updateState { it.copy(exerciseSteps = stepCounter.total) }
             }
         }
-        updateState { it.copy(status = "Session synced with phone") }
+        updateState { it.copy(exerciseSteps = 0L, status = "Session synced with phone") }
     }
 
-    private fun beginSensors() {
+    private fun beginSensors(totalSteps: Long) {
         bootToEpochOffsetMillis = System.currentTimeMillis() - SystemClock.elapsedRealtime()
-        intervalStepTotal = 0L
+        stepCounter.reset(totalSteps)
         firstMeasureHeartRateAtMillis = null
         emulatorHeartRateReceived = false
         updateState {
             SensorCaptureState(
                 phase = CapturePhase.MEASURING_HEART_RATE,
+                exerciseSteps = totalSteps,
                 status = "Checking heart-rate measurement capability",
                 unavailableMetrics =
                     if (accelerometer == null) setOf("accelerometer") else emptySet(),
