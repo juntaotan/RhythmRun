@@ -117,7 +117,7 @@ class ValidationHandler {
     private fun Double.toRadians(): Double = this * PI / 180.0
 
     private companion object {
-        const val MAXIMUM_ACCURACY_METERS = 60.0
+            const val MAXIMUM_ACCURACY_METERS = 60.0
         const val MAXIMUM_SPEED_METERS_PER_SECOND = 25.0
         const val EARTH_RADIUS_METERS = 6_371_000.0
     }

@@ -1,6 +1,9 @@
 package com.compx551.rhythmrun.ui
 
 import android.content.Context
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
 import java.util.UUID
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -506,6 +509,16 @@ class RhythmRunViewModel(
                     ),
                 )
                 recordTimeline("STAGE")
+                appContext?.getSystemService(Vibrator::class.java)?.let { vibrator ->
+                    if (vibrator.hasVibrator()) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            vibrator.vibrate(VibrationEffect.createOneShot(500L, VibrationEffect.DEFAULT_AMPLITUDE))
+                        } else {
+                            @Suppress("DEPRECATION")
+                            vibrator.vibrate(500L)
+                        }
+                    }
+                }
             } else {
                 runSessionState = runSessionState.copy(
                     liveRun = live.copy(
